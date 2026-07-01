@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Job search — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap tool">
+  <div class="tool-head"><a href="{{ url_for('index') }}" class="back">← Menu</a><h2>Remote job search</h2></div>
+
+  <form method="GET" action="{{ url_for('jobs') }}" class="search-bar">
+    <input type="text" name="q" value="{{ query }}" placeholder="e.g. python, data, react, design…" autofocus>
+    <button type="submit" class="btn-solid">Search</button>
+  </form>
+
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+  {% if jobs is not none %}
+    {% if jobs %}
+    <p class="muted">Showing {{ jobs|length }} recent remote roles{% if query %} for “{{ query }}”{% endif %}. Live data from Remotive.</p>
+    <div class="job-list">
+      {% for j in jobs %}
+      <a class="job-card" href="{{ j.url }}" target="_blank" rel="noopener">
+        <div class="job-main">
+          <h3>{{ j.title }}</h3>
+          <p class="job-company">{{ j.company }}</p>
+        </div>
+        <div class="job-meta">
+          {% if j.category %}<span class="pill">{{ j.category }}</span>{% endif %}
+          <span>{{ j.location }}</span>
+          {% if j.date %}<span class="job-date">{{ j.date }}</span>{% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No roles found{% if query %} for “{{ query }}”{% endif %}. Try another keyword.</p>
+    {% endif %}
+  {% else %}
+    <p class="muted">Search a keyword to see the latest remote openings.</p>
+  {% endif %}
+</main>
+{% endblock %}

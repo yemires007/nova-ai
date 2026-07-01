@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Sign up — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap auth">
+  <div class="auth-card">
+    <h2>Create your account</h2>
+    <form method="POST" action="{{ url_for('register') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Name<input type="text" name="name" value="{{ form.name if form else '' }}" required></label>
+      <label>Username<input type="text" name="username" value="{{ form.username if form else '' }}" required></label>
+      <label>Password<input type="password" name="password" minlength="6" required></label>
+      <label>Confirm password<input type="password" name="confirm" minlength="6" required></label>
+      <button type="submit" class="btn-solid full">Sign up</button>
+    </form>
+    <p class="auth-alt">Already have an account? <a href="{{ url_for('login') }}">Log in</a></p>
+  </div>
+</main>
+{% endblock %}

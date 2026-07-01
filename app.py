@@ -1,71 +1,169 @@
 """
 Nova — an AI assistant hub.
 
-A Flask app with a menu launcher and an AI chat powered by Google Gemini
-(free tier). The Gemini API key lives only on the server (GEMINI_API_KEY env
-var) and is never exposed to the browser — the page talks to /api/chat, which
-proxies to Gemini.
+A Flask app with a menu launcher and four tools:
+  * Chat with AI      — Google Gemini (open to everyone)
+  * Summarize         — extractive summary of pasted text or an uploaded .txt/.pdf
+  * Job search        — live remote jobs via the free Remotive API
+  * Scholarships      — a curated list of opportunities
 
-More features (summarize text/documents, job search, scholarship updates) are
-stubbed on the menu as "coming soon" and will slot in the same way.
+Accounts (register / log in) gate the last three features. The Gemini API key
+stays server-side (GEMINI_API_KEY); the browser only talks to /api/chat.
 
 Run locally:
-    set GEMINI_API_KEY=...   (Windows)   /   export GEMINI_API_KEY=...
+    # put GEMINI_API_KEY in a .env file next to this app, then:
     python app.py            # http://127.0.0.1:5004
 """
 import json
 import os
+import re
+import sqlite3
 import urllib.error
+import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import (
+    Flask, flash, g, jsonify, redirect, render_template, request, session,
+    url_for,
+)
+from flask_wtf import CSRFProtect
+from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "nova.db"
 
 try:
     from dotenv import load_dotenv
-    # load the .env sitting next to this file, regardless of the working dir
     load_dotenv(BASE_DIR / ".env")
 except ImportError:
     pass
 
+try:
+    from pypdf import PdfReader
+except ImportError:
+    PdfReader = None
+
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-nova-key")
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB upload cap
+csrf = CSRFProtect(app)
 
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 SYSTEM_PROMPT = (
     "You are Nova, a friendly, concise AI assistant featured on Adeyemi "
-    "Oluwaseyi Alao's portfolio. Answer helpfully and clearly. Use short "
+    "Oluwaseyi Alao's portfolio. Answer helpfully and clearly, using short "
     "paragraphs or bullet points. If you're unsure, say so."
 )
 
-# Menu of features. `ready` ones are live; others show as "coming soon".
 FEATURES = [
     {"key": "chat", "icon": "💬", "title": "Chat with AI",
-     "desc": "Ask anything — powered by Google Gemini.", "url": "/chat",
-     "ready": True},
+     "desc": "Ask anything — powered by Google Gemini.", "endpoint": "chat_page",
+     "gated": False},
     {"key": "summarize", "icon": "📝", "title": "Summarize text or document",
-     "desc": "Paste text or upload a file and get the gist.", "url": "#",
-     "ready": False},
+     "desc": "Paste text or upload a .txt/.pdf and get the gist.",
+     "endpoint": "summarize", "gated": True},
     {"key": "jobs", "icon": "💼", "title": "Job search",
-     "desc": "Find the latest remote jobs by keyword.", "url": "#",
-     "ready": False},
+     "desc": "Find the latest remote jobs by keyword.", "endpoint": "jobs",
+     "gated": True},
     {"key": "scholarships", "icon": "🎓", "title": "Scholarship updates",
-     "desc": "Browse the latest scholarship opportunities.", "url": "#",
-     "ready": False},
+     "desc": "Browse current scholarship opportunities.", "endpoint": "scholarships",
+     "gated": True},
 ]
+
+SCHOLARSHIPS = [
+    {"title": "Mastercard Foundation Scholars Program", "provider": "Mastercard Foundation",
+     "level": "Undergraduate & Master's", "region": "Africa",
+     "blurb": "Full funding (tuition, living, travel) for academically talented "
+              "young people, especially from Africa.",
+     "url": "https://mastercardfdn.org/all/scholars/"},
+    {"title": "Chevening Scholarships", "provider": "UK Government",
+     "level": "Master's", "region": "Global",
+     "blurb": "Fully-funded one-year master's study in the UK for future leaders.",
+     "url": "https://www.chevening.org/"},
+    {"title": "DAAD Scholarships", "provider": "DAAD (Germany)",
+     "level": "Master's & PhD", "region": "Global",
+     "blurb": "Funding for international students to study and research in Germany.",
+     "url": "https://www.daad.de/en/study-and-research-in-germany/scholarships/"},
+    {"title": "Fulbright Foreign Student Program", "provider": "US Government",
+     "level": "Master's & PhD", "region": "Global",
+     "blurb": "Graduate study, research and teaching in the United States.",
+     "url": "https://foreign.fulbrightonline.org/"},
+    {"title": "Commonwealth Scholarships", "provider": "Commonwealth (UK)",
+     "level": "Master's & PhD", "region": "Commonwealth countries",
+     "blurb": "Funded UK study for students from Commonwealth nations.",
+     "url": "https://cscuk.fcdo.gov.uk/scholarships/"},
+    {"title": "Google / Women Techmakers Scholarship", "provider": "Google",
+     "level": "Undergraduate & Graduate", "region": "Global",
+     "blurb": "Support for students in computer science and technology fields.",
+     "url": "https://www.womentechmakers.com/scholars"},
+]
+
+
+# --------------------------------------------------------------------------- #
+# Database + auth
+# --------------------------------------------------------------------------- #
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(_exc):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def init_db():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL,
+                username   TEXT NOT NULL UNIQUE,
+                pwd_hash   TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+
+def current_user():
+    uid = session.get("user_id")
+    if uid is None:
+        return None
+    return get_db().execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if current_user() is None:
+            flash("Please log in to use that feature.", "error")
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.context_processor
+def inject_user():
+    return {"user": current_user()}
 
 
 # --------------------------------------------------------------------------- #
 # Gemini
 # --------------------------------------------------------------------------- #
 def gemini_reply(messages):
-    """messages: [{role: 'user'|'assistant', text: str}]. Returns (reply, error)."""
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         return None, ("AI chat isn't switched on yet — the site owner needs to "
-                      "add a GEMINI_API_KEY. Everything else still works.")
-
+                      "add a GEMINI_API_KEY.")
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{GEMINI_MODEL}:generateContent?key={key}")
     contents = []
@@ -83,30 +181,24 @@ def gemini_reply(messages):
         "contents": contents,
         "generationConfig": {"temperature": 0.7, "maxOutputTokens": 800},
     }).encode("utf-8")
-
     req = urllib.request.Request(
-        url, data=body,
-        headers={"Content-Type": "application/json"}, method="POST",
-    )
+        url, data=body, headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "ignore")[:300]
-        app.logger.warning("Gemini HTTP %s: %s", exc.code, detail)
+        app.logger.warning("Gemini HTTP %s: %s", exc.code, exc.read().decode("utf-8", "ignore")[:200])
         if exc.code in (400, 403):
-            return None, "The AI key looks invalid or lacks access. Check GEMINI_API_KEY."
+            return None, "The AI key looks invalid or lacks access."
         if exc.code == 429:
-            return None, "The AI is busy (rate limit) — try again in a moment."
-        return None, f"AI service error ({exc.code}). Please try again."
+            return None, "The AI is busy (rate limit) — try again shortly."
+        return None, f"AI service error ({exc.code})."
     except Exception as exc:  # noqa: BLE001
         app.logger.warning("Gemini error: %s", exc)
         return None, "Couldn't reach the AI service. Please try again."
 
-    # extract text
     candidates = data.get("candidates") or []
     if not candidates:
-        # often a safety block
         return None, "The AI didn't return a response (it may have been filtered). Try rephrasing."
     parts = (candidates[0].get("content") or {}).get("parts") or []
     text = "".join(p.get("text", "") for p in parts).strip()
@@ -114,35 +206,222 @@ def gemini_reply(messages):
 
 
 # --------------------------------------------------------------------------- #
-# Routes
+# Summarizer (extractive, pure-Python — no external API)
+# --------------------------------------------------------------------------- #
+STOPWORDS = set("""a an the and or but if while of to in on for with as by at from
+into is are was were be been being this that these those it its he she they we you
+i me my our your their his her them us do does did have has had not no so than then
+there here what which who whom how when where why can could should would will just
+about above below over under again more most some such only own same too very""".split())
+
+
+def summarize_text(text, max_sentences=5):
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if not text:
+        return "", {}
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 0]
+    if len(sentences) <= max_sentences:
+        return text, {"sentences": len(sentences), "kept": len(sentences),
+                      "words_in": len(text.split()), "words_out": len(text.split())}
+
+    freq = {}
+    for w in re.findall(r"[a-zA-Z']+", text.lower()):
+        if w in STOPWORDS or len(w) <= 2:
+            continue
+        freq[w] = freq.get(w, 0) + 1
+    if not freq:
+        chosen = sentences[:max_sentences]
+    else:
+        scored = []
+        for idx, s in enumerate(sentences):
+            words = re.findall(r"[a-zA-Z']+", s.lower())
+            if not words:
+                continue
+            score = sum(freq.get(w, 0) for w in words) / (len(words) ** 0.5)
+            scored.append((score, idx, s))
+        scored.sort(reverse=True)
+        picked = sorted(scored[:max_sentences], key=lambda t: t[1])  # keep original order
+        chosen = [s for _, _, s in picked]
+
+    summary = " ".join(chosen)
+    stats = {"sentences": len(sentences), "kept": len(chosen),
+             "words_in": len(text.split()), "words_out": len(summary.split())}
+    return summary, stats
+
+
+def extract_file_text(file_storage):
+    name = (file_storage.filename or "").lower()
+    if name.endswith(".txt"):
+        return file_storage.read().decode("utf-8", "ignore"), None
+    if name.endswith(".pdf"):
+        if PdfReader is None:
+            return None, "PDF support isn't installed on the server."
+        try:
+            reader = PdfReader(file_storage)
+            return "\n".join((p.extract_text() or "") for p in reader.pages), None
+        except Exception as exc:  # noqa: BLE001
+            return None, f"Couldn't read that PDF: {exc}"
+    return None, "Unsupported file — please upload a .txt or .pdf."
+
+
+# --------------------------------------------------------------------------- #
+# Jobs (Remotive free API)
+# --------------------------------------------------------------------------- #
+def fetch_jobs(query, limit=15):
+    url = "https://remotive.com/api/remote-jobs?limit=" + str(limit)
+    if query:
+        url += "&search=" + urllib.parse.quote(query)
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (compatible; NovaJobs/1.0)",
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        app.logger.warning("Remotive error: %s", exc)
+        return None, "Couldn't fetch jobs right now. Please try again."
+    jobs = []
+    for j in (data.get("jobs") or [])[:limit]:
+        jobs.append({
+            "title": j.get("title", ""),
+            "company": j.get("company_name", ""),
+            "location": j.get("candidate_required_location", "Remote"),
+            "category": j.get("category", ""),
+            "date": (j.get("publication_date") or "")[:10],
+            "url": j.get("url", "#"),
+        })
+    return jobs, None
+
+
+# --------------------------------------------------------------------------- #
+# Routes — menu + auth
 # --------------------------------------------------------------------------- #
 @app.route("/")
 def index():
     return render_template("index.html", features=FEATURES)
 
 
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "GET":
+        return render_template("register.html")
+    db = get_db()
+    f = request.form
+    name = f.get("name", "").strip()
+    username = f.get("username", "").strip()
+    pwd = f.get("password", "")
+    confirm = f.get("confirm", "")
+    if not name:
+        flash("Please enter your name.", "error")
+    elif len(username) < 3:
+        flash("Username must be at least 3 characters.", "error")
+    elif len(pwd) < 6:
+        flash("Password must be at least 6 characters.", "error")
+    elif pwd != confirm:
+        flash("Passwords do not match.", "error")
+    elif db.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+        flash("That username is taken.", "error")
+    else:
+        db.execute("INSERT INTO users (name, username, pwd_hash, created_at) VALUES (?,?,?,?)",
+                   (name, username, generate_password_hash(pwd),
+                    datetime.now(timezone.utc).isoformat()))
+        db.commit()
+        flash("Account created — please log in.", "success")
+        return redirect(url_for("login"))
+    return render_template("register.html", form=f), 400
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        return render_template("login.html", next=request.args.get("next", ""))
+    db = get_db()
+    username = request.form.get("username", "").strip()
+    pwd = request.form.get("password", "")
+    nxt = request.form.get("next", "")
+    row = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    if row and check_password_hash(row["pwd_hash"], pwd):
+        session.clear()
+        session["user_id"] = row["id"]
+        flash(f"Welcome, {row['name']}.", "success")
+        return redirect(nxt if nxt and nxt.startswith("/") else url_for("index"))
+    flash("Invalid username or password.", "error")
+    return render_template("login.html", next=nxt), 400
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("Logged out.", "success")
+    return redirect(url_for("index"))
+
+
+# --------------------------------------------------------------------------- #
+# Routes — features
+# --------------------------------------------------------------------------- #
 @app.route("/chat")
 def chat_page():
     return render_template("chat.html")
 
 
 @app.route("/api/chat", methods=["POST"])
+@csrf.exempt
 def api_chat():
     payload = request.get_json(silent=True) or {}
     messages = payload.get("messages")
     if not isinstance(messages, list) or not messages:
         return jsonify(reply="No message received.", error=True), 400
-    reply, err = gemini_reply(messages[-20:])   # cap context to last 20 turns
-    if err:
-        return jsonify(reply=err, error=True)
-    return jsonify(reply=reply)
+    reply, err = gemini_reply(messages[-20:])
+    return jsonify(reply=err or reply, error=bool(err))
+
+
+@app.route("/summarize", methods=["GET", "POST"])
+@login_required
+def summarize():
+    if request.method == "GET":
+        return render_template("summarize.html")
+    text = request.form.get("text", "")
+    source = "pasted text"
+    upload = request.files.get("document")
+    if upload and upload.filename:
+        extracted, err = extract_file_text(upload)
+        if err:
+            flash(err, "error")
+            return render_template("summarize.html", text=text), 400
+        text = extracted
+        source = upload.filename
+    if not text.strip():
+        flash("Paste some text or upload a document.", "error")
+        return render_template("summarize.html"), 400
+    summary, stats = summarize_text(text, max_sentences=5)
+    return render_template("summarize.html", summary=summary, stats=stats, source=source)
+
+
+@app.route("/jobs")
+@login_required
+def jobs():
+    query = request.args.get("q", "").strip()
+    results, err = (None, None)
+    if query:
+        results, err = fetch_jobs(query)
+    return render_template("jobs.html", query=query, jobs=results, error=err)
+
+
+@app.route("/scholarships")
+@login_required
+def scholarships():
+    return render_template("scholarships.html", scholarships=SCHOLARSHIPS)
 
 
 @app.route("/health")
 def health():
     return jsonify(gemini_configured=bool(os.environ.get("GEMINI_API_KEY")),
-                   model=GEMINI_MODEL)
+                   model=GEMINI_MODEL, pdf=PdfReader is not None)
 
+
+init_db()
 
 if __name__ == "__main__":
     debug = os.environ.get("FLASK_DEBUG", "1") == "1"

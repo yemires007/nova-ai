@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Scholarships — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap tool">
+  <div class="tool-head"><a href="{{ url_for('index') }}" class="back">← Menu</a><h2>Scholarship updates</h2></div>
+  <p class="muted">A curated list of major, currently-running scholarship programs. Always check each site for the latest deadlines.</p>
+
+  <div class="scholar-list">
+    {% for s in scholarships %}
+    <a class="scholar-card" href="{{ s.url }}" target="_blank" rel="noopener">
+      <div class="scholar-top">
+        <h3>{{ s.title }}</h3>
+        <span class="pill">{{ s.region }}</span>
+      </div>
+      <p class="scholar-provider">{{ s.provider }} · {{ s.level }}</p>
+      <p class="scholar-blurb">{{ s.blurb }}</p>
+      <span class="fc-go">Visit site →</span>
+    </a>
+    {% endfor %}
+  </div>
+</main>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Log in — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap auth">
+  <div class="auth-card">
+    <h2>Log in</h2>
+    <form method="POST" action="{{ url_for('login') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label>Username<input type="text" name="username" autocomplete="username" required></label>
+      <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+      <button type="submit" class="btn-solid full">Log in</button>
+    </form>
+    <p class="auth-alt">New here? <a href="{{ url_for('register') }}">Create an account</a></p>
+  </div>
+</main>
+{% endblock %}

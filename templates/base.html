@@ -13,9 +13,26 @@
 <nav>
   <div class="wrap nav-in">
     <a href="{{ url_for('index') }}" class="brand">◆ Nova</a>
-    <a href="{{ url_for('index') }}" class="nav-menu">Menu</a>
+    <div class="nav-right">
+      <a href="{{ url_for('index') }}" class="nav-link">Menu</a>
+      {% if user %}
+        <span class="who">Hi, {{ user.name.split(' ')[0] }}</span>
+        <a href="{{ url_for('logout') }}" class="btn-ghost">Log out</a>
+      {% else %}
+        <a href="{{ url_for('login') }}" class="nav-link">Log in</a>
+        <a href="{{ url_for('register') }}" class="btn-solid">Sign up</a>
+      {% endif %}
+    </div>
   </div>
 </nav>
+
+<div class="wrap flash-wrap">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash {{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+</div>
 
 {% block body %}{% endblock %}
 

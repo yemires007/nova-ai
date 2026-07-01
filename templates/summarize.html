@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Summarize — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap tool">
+  <div class="tool-head"><a href="{{ url_for('index') }}" class="back">← Menu</a><h2>Summarize text or document</h2></div>
+
+  <form method="POST" action="{{ url_for('summarize') }}" enctype="multipart/form-data" class="tool-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Paste text
+      <textarea name="text" rows="8" placeholder="Paste an article, essay, or notes here…">{{ text or '' }}</textarea>
+    </label>
+    <div class="or">or</div>
+    <label class="file-label">Upload a .txt or .pdf
+      <input type="file" name="document" accept=".txt,.pdf">
+    </label>
+    <button type="submit" class="btn-solid">Summarize →</button>
+  </form>
+
+  {% if summary %}
+  <section class="result-card">
+    <div class="result-meta">
+      <span>Source: <b>{{ source }}</b></span>
+      {% if stats %}<span>{{ stats.words_in }} → {{ stats.words_out }} words · kept {{ stats.kept }}/{{ stats.sentences }} sentences</span>{% endif %}
+    </div>
+    <h3>Summary</h3>
+    <p class="summary-text">{{ summary }}</p>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}
