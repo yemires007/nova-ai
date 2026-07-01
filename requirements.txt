@@ -1,5 +1,6 @@
 flask==3.0.3
 flask-wtf==1.2.1
+flask-limiter==3.5.0
 gunicorn==21.2.0
 python-dotenv==1.0.1
 pypdf==4.3.1

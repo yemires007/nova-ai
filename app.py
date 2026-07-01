@@ -32,6 +32,12 @@ from flask import (
 from flask_wtf import CSRFProtect
 from werkzeug.security import check_password_hash, generate_password_hash
 
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+except ImportError:
+    Limiter = None
+
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "nova.db"
 
@@ -55,6 +61,57 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-nova-key")
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB upload cap
 csrf = CSRFProtect(app)
+
+# --- rate limiting (per client IP) ---
+if Limiter is not None:
+    limiter = Limiter(
+        key_func=get_remote_address, app=app,
+        default_limits=["300 per hour"],
+        storage_uri=os.environ.get("RATELIMIT_STORAGE_URI", "memory://"),
+    )
+else:                                   # graceful no-op if the package is absent
+    class _NoLimiter:
+        def limit(self, *_a, **_k):
+            return lambda f: f
+    limiter = _NoLimiter()
+
+
+@app.after_request
+def security_headers(resp):
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "script-src 'self'; connect-src 'self'; "
+        "base-uri 'self'; frame-ancestors 'none'"
+    )
+    return resp
+
+
+@app.errorhandler(404)
+def not_found(_e):
+    return render_template("error.html", code=404,
+                           message="That page doesn't exist."), 404
+
+
+@app.errorhandler(429)
+def rate_limited(_e):
+    if request.path.startswith("/api/"):
+        return jsonify(reply="You're sending messages too fast — please slow down.",
+                       error=True), 429
+    return render_template("error.html", code=429,
+                           message="Too many requests — please slow down and try again."), 429
+
+
+@app.errorhandler(500)
+def server_error(_e):
+    return render_template("error.html", code=500,
+                           message="Something went wrong on our end."), 500
 
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 SYSTEM_PROMPT = (
@@ -415,6 +472,7 @@ def chat_page():
 
 @app.route("/api/chat", methods=["POST"])
 @csrf.exempt
+@limiter.limit("20 per minute")
 def api_chat():
     payload = request.get_json(silent=True) or {}
     messages = payload.get("messages")
@@ -426,6 +484,7 @@ def api_chat():
 
 @app.route("/summarize", methods=["GET", "POST"])
 @login_required
+@limiter.limit("40 per hour")
 def summarize():
     if request.method == "GET":
         return render_template("summarize.html")
@@ -448,6 +507,7 @@ def summarize():
 
 @app.route("/jobs")
 @login_required
+@limiter.limit("60 per hour")
 def jobs():
     q = request.args.get("q", "").strip()
     category = request.args.get("category", "").strip()

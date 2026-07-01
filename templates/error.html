@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap" style="padding:80px 22px;text-align:center;flex:1">
+  <h1 style="font-size:clamp(48px,12vw,96px);background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent">{{ code }}</h1>
+  <p style="color:var(--ink-soft);font-size:18px;margin:8px 0 26px">{{ message }}</p>
+  <a href="{{ url_for('index') }}" class="btn-solid">← Back to menu</a>
+</main>
+{% endblock %}
