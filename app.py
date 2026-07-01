@@ -16,6 +16,7 @@ Run locally:
 import json
 import os
 import re
+import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -138,6 +139,8 @@ class Conversation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     title = db.Column(db.String(160), default="New chat")
+    is_public = db.Column(db.Boolean, default=False)
+    share_token = db.Column(db.String(32), unique=True)
     created_at = db.Column(db.DateTime, default=utcnow)
     updated_at = db.Column(db.DateTime, default=utcnow)
     messages = db.relationship("Message", backref="conversation", lazy=True,
@@ -617,6 +620,30 @@ def history():
     sums = SavedSummary.query.filter_by(user_id=user.id).order_by(SavedSummary.id.desc()).all()
     return render_template("history.html", conversations=convos, summaries=sums,
                            limit=FREE_MAX_CONVERSATIONS)
+
+
+@app.route("/conversation/<int:cid>/share", methods=["POST"])
+@login_required
+def share_conversation(cid):
+    convo = db.session.get(Conversation, cid)
+    if not convo or convo.user_id != current_user().id:
+        abort(404)
+    convo.is_public = not convo.is_public
+    if convo.is_public and not convo.share_token:
+        convo.share_token = secrets.token_urlsafe(9)
+    db.session.commit()
+    flash("Public share link created." if convo.is_public else "Sharing turned off.",
+          "success")
+    return redirect(url_for("history"))
+
+
+@app.route("/s/<token>")
+def shared(token):
+    convo = Conversation.query.filter_by(share_token=token, is_public=True).first()
+    if not convo:
+        abort(404)
+    messages = [{"role": m.role, "text": m.content} for m in convo.messages]
+    return render_template("shared.html", convo=convo, messages=messages)
 
 
 @app.route("/conversation/<int:cid>/delete", methods=["POST"])

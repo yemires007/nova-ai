@@ -14,15 +14,29 @@
       {% if not user.is_pro %}<p class="muted">Free plan keeps up to {{ limit }} chats. <a href="{{ url_for('pricing') }}">Go Pro</a> for unlimited.</p>{% endif %}
       <div class="hist-list">
         {% for c in conversations %}
-        <div class="hist-row">
-          <a href="{{ url_for('chat_page', c=c.id) }}" class="hist-main">
-            <span class="hist-title">{{ c.title }}</span>
-            <span class="hist-when">{{ c.updated_at.strftime('%d %b %Y, %H:%M') }}</span>
-          </a>
-          <form method="POST" action="{{ url_for('delete_conversation', cid=c.id) }}" onsubmit="return confirm('Delete this chat?');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="mini-del" title="Delete">🗑</button>
-          </form>
+        <div class="hist-item">
+          <div class="hist-row">
+            <a href="{{ url_for('chat_page', c=c.id) }}" class="hist-main">
+              <span class="hist-title">{{ c.title }}</span>
+              <span class="hist-when">{{ c.updated_at.strftime('%d %b %Y, %H:%M') }}</span>
+            </a>
+            <div class="hist-actions">
+              <form method="POST" action="{{ url_for('share_conversation', cid=c.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="mini-share {{ 'on' if c.is_public }}" title="Share">{{ '🔗 Sharing' if c.is_public else '🔗 Share' }}</button>
+              </form>
+              <form method="POST" action="{{ url_for('delete_conversation', cid=c.id) }}" onsubmit="return confirm('Delete this chat?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="mini-del" title="Delete">🗑</button>
+              </form>
+            </div>
+          </div>
+          {% if c.is_public %}
+          <div class="share-link">
+            <input readonly value="{{ url_for('shared', token=c.share_token, _external=True) }}" onclick="this.select()">
+            <span class="share-hint">Public — anyone with this link can view</span>
+          </div>
+          {% endif %}
         </div>
         {% endfor %}
       </div>

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ convo.title }} — shared on Nova{% endblock %}
+
+{% block body %}
+<main class="wrap chat-wrap">
+  <div class="shared-banner">
+    <span>🔗 Shared conversation</span>
+    <a href="{{ url_for('register') }}" class="btn-solid">Create your own with Nova →</a>
+  </div>
+  <h2 class="shared-title">{{ convo.title }}</h2>
+
+  <div id="messages" class="messages">
+    {% for m in messages %}
+      {% if m.role == 'assistant' %}
+        <div class="msg bot md" data-md>{{ m.text }}</div>
+      {% else %}
+        <div class="msg user">{{ m.text }}</div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="shared-cta">
+    <p>Like this? Nova can chat, summarize documents, analyze data, and more.</p>
+    <a href="{{ url_for('index') }}" class="btn-ghost">Explore Nova</a>
+    <a href="{{ url_for('register') }}" class="btn-solid">Sign up free</a>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}{% include "_richlibs.html" %}{% endblock %}
