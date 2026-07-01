@@ -46,6 +46,11 @@ try:
 except ImportError:
     PdfReader = None
 
+try:
+    import docx  # python-docx, for Word .docx files
+except ImportError:
+    docx = None
+
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-nova-key")
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MB upload cap
@@ -252,7 +257,7 @@ def summarize_text(text, max_sentences=5):
 
 def extract_file_text(file_storage):
     name = (file_storage.filename or "").lower()
-    if name.endswith(".txt"):
+    if name.endswith((".txt", ".md", ".csv")):
         return file_storage.read().decode("utf-8", "ignore"), None
     if name.endswith(".pdf"):
         if PdfReader is None:
@@ -262,16 +267,49 @@ def extract_file_text(file_storage):
             return "\n".join((p.extract_text() or "") for p in reader.pages), None
         except Exception as exc:  # noqa: BLE001
             return None, f"Couldn't read that PDF: {exc}"
-    return None, "Unsupported file — please upload a .txt or .pdf."
+    if name.endswith(".docx"):
+        if docx is None:
+            return None, "Word (.docx) support isn't installed on the server."
+        try:
+            document = docx.Document(file_storage)
+            return "\n".join(p.text for p in document.paragraphs), None
+        except Exception as exc:  # noqa: BLE001
+            return None, f"Couldn't read that Word file: {exc}"
+    if name.endswith(".doc"):
+        return None, "Old .doc format isn't supported — please save as .docx or PDF."
+    return None, "Unsupported file — upload a .txt, .md, .pdf, or .docx."
 
 
 # --------------------------------------------------------------------------- #
 # Jobs (Remotive free API)
 # --------------------------------------------------------------------------- #
-def fetch_jobs(query, limit=15):
-    url = "https://remotive.com/api/remote-jobs?limit=" + str(limit)
-    if query:
-        url += "&search=" + urllib.parse.quote(query)
+# Remotive job categories (slug, label) for the filter dropdown.
+JOB_CATEGORIES = [
+    ("", "All categories"),
+    ("software-dev", "Software Development"),
+    ("data", "Data"),
+    ("devops", "DevOps / Sysadmin"),
+    ("design", "Design"),
+    ("product", "Product"),
+    ("marketing", "Marketing"),
+    ("sales", "Sales / Business"),
+    ("customer-support", "Customer Support"),
+    ("finance-legal", "Finance / Legal"),
+    ("hr", "HR"),
+    ("qa", "QA"),
+    ("writing", "Writing"),
+    ("all-others", "All others"),
+]
+
+
+def fetch_jobs(search="", category="", company="", location="", fetch=50, show=24):
+    url = "https://remotive.com/api/remote-jobs?limit=" + str(fetch)
+    if search:
+        url += "&search=" + urllib.parse.quote(search)
+    if category:
+        url += "&category=" + urllib.parse.quote(category)
+    if company:
+        url += "&company_name=" + urllib.parse.quote(company)
     req = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0 (compatible; NovaJobs/1.0)",
         "Accept": "application/json",
@@ -282,16 +320,25 @@ def fetch_jobs(query, limit=15):
     except Exception as exc:  # noqa: BLE001
         app.logger.warning("Remotive error: %s", exc)
         return None, "Couldn't fetch jobs right now. Please try again."
+
+    loc = location.strip().lower()
     jobs = []
-    for j in (data.get("jobs") or [])[:limit]:
+    for j in (data.get("jobs") or []):
+        job_loc = (j.get("candidate_required_location") or "Remote")
+        if loc:
+            jl = job_loc.lower()
+            if loc not in jl and "worldwide" not in jl and "anywhere" not in jl:
+                continue
         jobs.append({
             "title": j.get("title", ""),
             "company": j.get("company_name", ""),
-            "location": j.get("candidate_required_location", "Remote"),
+            "location": job_loc,
             "category": j.get("category", ""),
             "date": (j.get("publication_date") or "")[:10],
             "url": j.get("url", "#"),
         })
+        if len(jobs) >= show:
+            break
     return jobs, None
 
 
@@ -402,11 +449,16 @@ def summarize():
 @app.route("/jobs")
 @login_required
 def jobs():
-    query = request.args.get("q", "").strip()
+    q = request.args.get("q", "").strip()
+    category = request.args.get("category", "").strip()
+    company = request.args.get("company", "").strip()
+    location = request.args.get("location", "").strip()
     results, err = (None, None)
-    if query:
-        results, err = fetch_jobs(query)
-    return render_template("jobs.html", query=query, jobs=results, error=err)
+    if q or category or company or location:
+        results, err = fetch_jobs(q, category, company, location)
+    return render_template("jobs.html", jobs=results, error=err, q=q,
+                           category=category, company=company, location=location,
+                           categories=JOB_CATEGORIES)
 
 
 @app.route("/scholarships")

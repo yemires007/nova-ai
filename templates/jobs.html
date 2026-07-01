@@ -5,16 +5,27 @@
 <main class="wrap tool">
   <div class="tool-head"><a href="{{ url_for('index') }}" class="back">← Menu</a><h2>Remote job search</h2></div>
 
-  <form method="GET" action="{{ url_for('jobs') }}" class="search-bar">
-    <input type="text" name="q" value="{{ query }}" placeholder="e.g. python, data, react, design…" autofocus>
-    <button type="submit" class="btn-solid">Search</button>
+  <form method="GET" action="{{ url_for('jobs') }}" class="job-search">
+    <div class="js-row">
+      <input type="text" name="q" value="{{ q }}" placeholder="Keyword — e.g. python, react, ML…" autofocus>
+      <select name="category">
+        {% for slug, label in categories %}
+        <option value="{{ slug }}" {% if slug == category %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="js-row">
+      <input type="text" name="location" value="{{ location }}" placeholder="Location — e.g. USA, Europe, Worldwide">
+      <input type="text" name="company" value="{{ company }}" placeholder="Company (optional)">
+    </div>
+    <button type="submit" class="btn-solid">🔍 Search jobs</button>
   </form>
 
   {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
   {% if jobs is not none %}
     {% if jobs %}
-    <p class="muted">Showing {{ jobs|length }} recent remote roles{% if query %} for “{{ query }}”{% endif %}. Live data from Remotive.</p>
+    <p class="muted">Showing {{ jobs|length }} remote roles{% if q %} for “{{ q }}”{% endif %}{% if location %} · {{ location }}{% endif %}. Live from Remotive.</p>
     <div class="job-list">
       {% for j in jobs %}
       <a class="job-card" href="{{ j.url }}" target="_blank" rel="noopener">
@@ -31,10 +42,10 @@
       {% endfor %}
     </div>
     {% else %}
-    <p class="muted">No roles found{% if query %} for “{{ query }}”{% endif %}. Try another keyword.</p>
+    <p class="muted">No roles matched your filters. Try a broader keyword or clear the location.</p>
     {% endif %}
   {% else %}
-    <p class="muted">Search a keyword to see the latest remote openings.</p>
+    <p class="muted">Search by keyword, category, location or company to see the latest remote openings.</p>
   {% endif %}
 </main>
 {% endblock %}
