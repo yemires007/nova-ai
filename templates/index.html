@@ -18,12 +18,28 @@
         <span class="fc-icon">{{ f.icon }}</span>
         <h3>{{ f.title }}</h3>
         <p>{{ f.desc }}</p>
-        {% if locked %}
-          <span class="fc-lock">🔒 Log in to use</span>
-        {% else %}
-          <span class="fc-go">Open →</span>
-        {% endif %}
+        {% if locked %}<span class="fc-lock">🔒 Log in to use</span>
+        {% else %}<span class="fc-go">Open →</span>{% endif %}
       </a>
+    {% endfor %}
+  </div>
+
+  <!-- Pro tools -->
+  <div class="pro-head">
+    <h2>Pro tools <span class="plan-badge pro">PRO</span></h2>
+    {% if not (user and user.is_pro) %}
+      <a href="{{ url_for('pricing') }}" class="btn-solid">Upgrade to unlock →</a>
+    {% endif %}
+  </div>
+  <div class="feature-grid">
+    {% for t in pro_tools %}
+      <div class="feature-card pro-card{{ '' if (user and user.is_pro) else ' locked' }}">
+        <span class="fc-icon">{{ t.icon }}</span>
+        <h3>{{ t.title }}</h3>
+        <p>{{ t.desc }}</p>
+        {% if user and user.is_pro %}<span class="fc-lock">✨ Coming soon</span>
+        {% else %}<a href="{{ url_for('pricing') }}" class="fc-lock">🔒 Pro feature</a>{% endif %}
+      </div>
     {% endfor %}
   </div>
 </main>

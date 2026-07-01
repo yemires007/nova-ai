@@ -159,6 +159,66 @@ footer p{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .chat-input button:disabled{opacity:.5;cursor:default}
 .disclaimer{text-align:center;font-size:12px;color:var(--muted);margin:10px 0 6px}
 
+/* plan badges + nav upgrade */
+.plan-badge{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:99px}
+.plan-badge.pro{background:linear-gradient(120deg,#f59e0b,#f43f5e);color:#fff}
+.nav-link.upgrade{color:#ffd479;font-weight:600}
+
+/* pro tools section */
+.pro-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:40px 0 16px}
+.pro-head h2{font-size:22px;display:flex;align-items:center;gap:10px}
+.pro-card{opacity:1}
+.pro-card.locked{opacity:.82}
+.pro-card .fc-lock{color:var(--primary-deep)}
+
+/* pricing */
+.pricing{padding:44px 22px 50px}
+.plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;max-width:760px;margin:0 auto}
+@media(max-width:640px){.plan-grid{grid-template-columns:1fr}}
+.plan-card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:28px;position:relative;box-shadow:0 18px 46px -32px rgba(23,26,43,.5)}
+.plan-card.featured{border:2px solid var(--primary);box-shadow:0 26px 60px -30px rgba(99,102,241,.6)}
+.plan-tag{position:absolute;top:-12px;left:24px;background:var(--grad);color:#fff;font-size:11px;font-weight:700;padding:4px 12px;border-radius:99px;letter-spacing:.03em}
+.plan-card h3{font-size:20px}
+.plan-price{font-size:34px;font-weight:800;margin:8px 0 16px;letter-spacing:-.02em}
+.plan-price span{font-size:14px;font-weight:500;color:var(--muted)}
+.plan-card ul{list-style:none;display:grid;gap:9px;margin-bottom:20px}
+.plan-card li{font-size:14.5px;color:var(--ink-soft)}
+.plan-current{display:block;text-align:center;font-family:var(--mono);font-size:13px;color:var(--primary-deep);padding:11px;background:#eef0fe;border-radius:10px}
+.btn-ghost.full{display:block;width:100%;text-align:center;padding:12px;border:1px solid var(--line);color:var(--ink);border-radius:10px}
+.btn-ghost.full:hover{border-color:var(--primary);color:var(--primary-deep);background:#fff}
+
+/* history */
+.hist-section{margin-bottom:30px}
+.hist-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.hist-head h3,.hist-section>h3{font-size:17px}
+.hist-list{display:grid;gap:10px;margin-top:10px}
+.hist-row{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.hist-row:hover{border-color:var(--primary)}
+.hist-main{flex:1;display:flex;flex-direction:column;gap:3px}
+.hist-title{font-weight:600;font-size:15px}
+.hist-when{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.mini-del{border:1px solid var(--line);background:#fff;border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:14px}
+.mini-del:hover{border-color:#e11d48;color:#e11d48}
+.summary-row{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+.summary-src{font-family:var(--mono);font-size:12px;color:var(--primary-deep);margin-bottom:8px}
+.summary-row p{font-size:14.5px;color:var(--ink-soft);line-height:1.6}
+
+/* rich markdown inside AI messages */
+.msg.bot h1,.msg.bot h2,.msg.bot h3{margin:.4em 0 .3em;line-height:1.25}
+.msg.bot h1{font-size:1.3em}.msg.bot h2{font-size:1.18em}.msg.bot h3{font-size:1.06em}
+.msg.bot p{margin:.5em 0}
+.msg.bot ul,.msg.bot ol{margin:.4em 0 .4em 1.2em;display:grid;gap:.2em}
+.msg.bot a{color:var(--primary-deep);text-decoration:underline}
+.msg.bot pre{background:#0d1117;border-radius:10px;padding:14px 16px;overflow-x:auto;margin:.6em 0}
+.msg.bot pre code{font-family:var(--mono);font-size:13px;background:none;padding:0;color:#e6edf3}
+.msg.bot code{font-family:var(--mono);font-size:.9em;background:#eef0fe;padding:2px 6px;border-radius:5px}
+.msg.bot table{border-collapse:collapse;margin:.6em 0;font-size:14px;width:100%}
+.msg.bot th,.msg.bot td{border:1px solid var(--line);padding:7px 11px;text-align:left}
+.msg.bot th{background:#f3f4fb}
+.msg.bot blockquote{border-left:3px solid var(--primary);margin:.5em 0;padding:.2em 0 .2em 12px;color:var(--ink-soft)}
+.msg.bot .mermaid{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin:.6em 0;overflow-x:auto}
+.msg.bot .katex-display{overflow-x:auto;overflow-y:hidden}
+
 @media (prefers-reduced-motion:reduce){
   *{animation:none !important}
   body::before,body::after{animation:none}

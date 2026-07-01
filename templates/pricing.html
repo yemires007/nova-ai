@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Pricing — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap pricing">
+  <header class="hero">
+    <span class="eyebrow">Pricing</span>
+    <h1>Do more with Nova Pro</h1>
+    <p>Start free. Upgrade when you need study mode, productivity tools, collaboration and workflows.</p>
+  </header>
+
+  <div class="plan-grid">
+    <div class="plan-card">
+      <h3>{{ plans.free.name }}</h3>
+      <div class="plan-price">{{ plans.free.price }}<span>{{ plans.free.period }}</span></div>
+      <ul>{% for feat in plans.free.features %}<li>✓ {{ feat }}</li>{% endfor %}</ul>
+      {% if user and not user.is_pro %}
+        <span class="plan-current">Your current plan</span>
+      {% elif user and user.is_pro %}
+        <form method="POST" action="{{ url_for('downgrade') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn-ghost full" type="submit">Switch to Free</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('register') }}" class="btn-ghost full">Get started</a>
+      {% endif %}
+    </div>
+
+    <div class="plan-card featured">
+      <span class="plan-tag">Most popular</span>
+      <h3>{{ plans.pro.name }}</h3>
+      <div class="plan-price">{{ plans.pro.price }}<span>{{ plans.pro.period }}</span></div>
+      <ul>{% for feat in plans.pro.features %}<li>✓ {{ feat }}</li>{% endfor %}</ul>
+      {% if user and user.is_pro %}
+        <span class="plan-current">You're on Pro ✨</span>
+      {% elif user %}
+        <form method="POST" action="{{ url_for('subscribe') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn-solid full" type="submit">Upgrade to Pro</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('register') }}" class="btn-solid full">Sign up & go Pro</a>
+      {% endif %}
+    </div>
+  </div>
+  <p class="muted" style="text-align:center;margin-top:18px">Demo checkout — real billing (Paystack / Stripe) is a planned next step.</p>
+</main>
+{% endblock %}

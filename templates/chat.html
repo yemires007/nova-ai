@@ -1,31 +1,46 @@
 {% extends "base.html" %}
 {% block title %}Chat — Nova{% endblock %}
 
+{% block head_extra %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+{% endblock %}
+
 {% block body %}
 <main class="wrap chat-wrap">
   <div class="chat-head-row">
     <a href="{{ url_for('index') }}" class="back">← Menu</a>
     <h2>Chat with AI</h2>
+    {% if user %}<a href="{{ url_for('history') }}" class="back" style="margin-left:auto">History</a>{% endif %}
   </div>
 
-  <div id="messages" class="messages">
-    <div class="msg bot">Hi! I'm Nova. Ask me anything — or try one of the suggestions below.</div>
-  </div>
+  <div id="messages" class="messages"></div>
 
   <div class="suggest" id="suggest">
-    <button type="button" data-q="Explain how a neural network learns, simply.">Explain neural nets</button>
-    <button type="button" data-q="Give me 5 interview questions for a data science role.">DS interview Qs</button>
-    <button type="button" data-q="Write a short cover-letter intro for an ML engineer role.">Cover-letter intro</button>
+    <button type="button" data-q="Show me a Python quicksort with an explanation.">Code example</button>
+    <button type="button" data-q="Make a Markdown table comparing SQL vs NoSQL.">Comparison table</button>
+    <button type="button" data-q="Draw a simple flowchart of a login process using mermaid.">Flowchart</button>
+    <button type="button" data-q="Explain the quadratic formula with the math.">Math formula</button>
   </div>
 
   <form id="chat-form" class="chat-input">
-    <textarea id="chat-text" placeholder="Message Nova…" rows="1" autocomplete="off"></textarea>
+    <textarea id="chat-text" placeholder="Message Nova…  (Enter to send, Shift+Enter for a new line)" rows="1"></textarea>
     <button type="submit" id="send-btn" aria-label="Send">↑</button>
   </form>
   <p class="disclaimer">Nova can make mistakes — double-check important info.</p>
 </main>
+
+<script id="nova-data" type="application/json">
+{{ {"conversationId": conversation_id, "preload": preload}|tojson }}
+</script>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 {% endblock %}

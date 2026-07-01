@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}History — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap tool">
+  <div class="tool-head"><a href="{{ url_for('index') }}" class="back">← Menu</a><h2>Your history</h2></div>
+
+  <section class="hist-section">
+    <div class="hist-head">
+      <h3>Chats</h3>
+      <a href="{{ url_for('chat_page') }}" class="btn-solid">+ New chat</a>
+    </div>
+    {% if conversations %}
+      {% if not user.is_pro %}<p class="muted">Free plan keeps up to {{ limit }} chats. <a href="{{ url_for('pricing') }}">Go Pro</a> for unlimited.</p>{% endif %}
+      <div class="hist-list">
+        {% for c in conversations %}
+        <div class="hist-row">
+          <a href="{{ url_for('chat_page', c=c.id) }}" class="hist-main">
+            <span class="hist-title">{{ c.title }}</span>
+            <span class="hist-when">{{ c.updated_at.strftime('%d %b %Y, %H:%M') }}</span>
+          </a>
+          <form method="POST" action="{{ url_for('delete_conversation', cid=c.id) }}" onsubmit="return confirm('Delete this chat?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="mini-del" title="Delete">🗑</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No saved chats yet. Start one from <a href="{{ url_for('chat_page') }}">Chat</a>.</p>
+    {% endif %}
+  </section>
+
+  <section class="hist-section">
+    <h3>Saved summaries</h3>
+    {% if summaries %}
+      <div class="hist-list">
+        {% for s in summaries %}
+        <div class="summary-row">
+          <div class="summary-src">{{ s.source }} <span class="hist-when">{{ s.created_at.strftime('%d %b %Y') }}</span></div>
+          <p>{{ s.content }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No summaries yet. Try <a href="{{ url_for('summarize') }}">Summarize</a>.</p>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

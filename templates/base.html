@@ -11,6 +11,7 @@
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#0b0d1c">
+{% block head_extra %}{% endblock %}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -23,9 +24,16 @@
     <div class="nav-right">
       <a href="{{ url_for('index') }}" class="nav-link">Menu</a>
       {% if user %}
+        <a href="{{ url_for('history') }}" class="nav-link">History</a>
+        {% if user.is_pro %}
+          <span class="plan-badge pro">PRO</span>
+        {% else %}
+          <a href="{{ url_for('pricing') }}" class="nav-link upgrade">Upgrade</a>
+        {% endif %}
         <span class="who">Hi, {{ user.name.split(' ')[0] }}</span>
         <a href="{{ url_for('logout') }}" class="btn-ghost">Log out</a>
       {% else %}
+        <a href="{{ url_for('pricing') }}" class="nav-link">Pricing</a>
         <a href="{{ url_for('login') }}" class="nav-link">Log in</a>
         <a href="{{ url_for('register') }}" class="btn-solid">Sign up</a>
       {% endif %}
@@ -44,7 +52,7 @@
 {% block body %}{% endblock %}
 
 <footer>
-  <div class="wrap"><p>Nova — a portfolio demo by Adeyemi Oluwaseyi Alao · AI chat </p></div>
+  <div class="wrap"><p>Nova AI chat </p></div>
 </footer>
 {% block scripts %}{% endblock %}
 </body>
