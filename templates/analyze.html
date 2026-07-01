@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Data analysis — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap tool">
+  <div class="tool-head"><a href="{{ url_for('index') }}" class="back">← Menu</a><h2>Data analysis</h2></div>
+
+  {% if not available %}
+    <div class="flash error">Data analysis needs pandas/matplotlib installed on the server.</div>
+  {% else %}
+  <form method="POST" action="{{ url_for('analyze') }}" enctype="multipart/form-data" class="tool-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="dropzone">
+      <span class="dz-text">📊 Drag &amp; drop a <b>.csv</b> or <b>.xlsx</b> here, or click to choose</span>
+      <input type="file" name="dataset" accept=".csv,.xlsx,.xls" required>
+      <span class="dz-file"></span>
+    </label>
+    <fieldset class="clean-opts">
+      <legend>Optional cleaning</legend>
+      <label class="chk"><input type="checkbox" name="clean" value="dedupe"> Remove duplicate rows</label>
+      <label class="chk"><input type="checkbox" name="clean" value="dropna"> Drop rows with missing values</label>
+      <label class="chk"><input type="checkbox" name="clean" value="fillnum"> Fill missing numbers with the mean</label>
+      <label class="chk"><input type="checkbox" name="clean" value="fillcat"> Fill missing text with the most frequent</label>
+    </fieldset>
+    <button type="submit" class="btn-solid">Analyze →</button>
+  </form>
+  {% endif %}
+
+  {% if done %}
+  <section class="analysis">
+    <h3 class="an-file">📄 {{ filename }}</h3>
+
+    {% if clean_log %}
+    <div class="clean-log">{% for line in clean_log %}<span>✓ {{ line }}</span>{% endfor %}</div>
+    {% endif %}
+
+    <div class="stat-row">
+      <div class="stat"><span class="lab">Rows</span><b>{{ stats.rows }}</b></div>
+      <div class="stat"><span class="lab">Columns</span><b>{{ stats.cols }}</b></div>
+      <div class="stat"><span class="lab">Missing cells</span><b>{{ stats.missing }}</b></div>
+      <div class="stat"><span class="lab">Duplicate rows</span><b>{{ stats.duplicates }}</b></div>
+    </div>
+    {% if stats.sampled %}<p class="muted">Charts &amp; stats use a 20,000-row sample of your {{ stats.raw_rows }} rows.</p>{% endif %}
+
+    {% if charts %}
+    <h4 class="an-h">Visualizations</h4>
+    <div class="chart-grid">
+      {% for ch in charts %}
+      <figure class="chart"><img src="{{ ch.img }}" alt="{{ ch.title }}"><figcaption>{{ ch.title }}</figcaption></figure>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <h4 class="an-h">Columns</h4>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead><tr><th>Column</th><th>Type</th><th>Missing</th><th>%</th><th>Unique</th></tr></thead>
+        <tbody>
+          {% for c in columns %}
+          <tr><td>{{ c.name }}</td><td>{{ c.dtype }}</td><td>{{ c.missing }}</td><td>{{ c.missing_pct }}%</td><td>{{ c.unique }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if describe_html %}
+    <h4 class="an-h">Numeric summary</h4>
+    <div class="table-scroll">{{ describe_html | safe }}</div>
+    {% endif %}
+
+    <h4 class="an-h">Preview</h4>
+    <div class="table-scroll">{{ preview_html | safe }}</div>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}

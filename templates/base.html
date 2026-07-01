@@ -11,6 +11,7 @@
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#0b0d1c">
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 {% block head_extra %}{% endblock %}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,6 +23,7 @@
   <div class="wrap nav-in">
     <a href="{{ url_for('index') }}" class="brand">◆ Nova</a>
     <div class="nav-right">
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark mode">🌙</button>
       <a href="{{ url_for('index') }}" class="nav-link">Menu</a>
       {% if user %}
         <a href="{{ url_for('history') }}" class="nav-link">History</a>
@@ -54,6 +56,7 @@
 <footer>
   <div class="wrap"><p>Nova AI chat </p></div>
 </footer>
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

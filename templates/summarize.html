@@ -11,8 +11,10 @@
       <textarea name="text" rows="8" placeholder="Paste an article, essay, or notes here…">{{ text or '' }}</textarea>
     </label>
     <div class="or">or</div>
-    <label class="file-label">Upload a document — <b>Word (.docx)</b>, PDF, .txt, .md
+    <label class="dropzone">
+      <span class="dz-text">📄 Drag &amp; drop a <b>Word (.docx)</b>, PDF, .txt or .md — or click to choose</span>
       <input type="file" name="document" accept=".txt,.md,.csv,.pdf,.docx">
+      <span class="dz-file"></span>
     </label>
     <button type="submit" class="btn-solid">Summarize →</button>
   </form>

@@ -55,6 +55,17 @@ try:
 except ImportError:
     docx = None
 
+import base64
+import io
+try:
+    import pandas as pd
+    import matplotlib
+    matplotlib.use("Agg")            # headless server rendering
+    import matplotlib.pyplot as plt
+    ANALYSIS_OK = True
+except Exception:                    # noqa: BLE001
+    ANALYSIS_OK = False
+
 
 def _db_uri():
     url = os.environ.get("DATABASE_URL", "").strip()
@@ -70,6 +81,12 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-nova-key")
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
 app.config["SQLALCHEMY_DATABASE_URI"] = _db_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+# secure sessions (Secure cookie in production, i.e. when not in debug)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("FLASK_DEBUG", "1") != "1",
+)
 
 db = SQLAlchemy(app)
 csrf = CSRFProtect(app)
@@ -222,6 +239,8 @@ FEATURES = [
      "desc": "Find the latest remote jobs by keyword, category & location.", "endpoint": "jobs", "gated": True},
     {"icon": "🎓", "title": "Scholarship updates",
      "desc": "Browse current scholarship opportunities.", "endpoint": "scholarships", "gated": True},
+    {"icon": "📊", "title": "Data analysis",
+     "desc": "Upload a CSV/Excel — clean it, profile it, and visualize it.", "endpoint": "analyze", "gated": True},
 ]
 
 PRO_TOOLS = [
@@ -623,10 +642,141 @@ def scholarships():
     return render_template("scholarships.html", scholarships=SCHOLARSHIPS)
 
 
+# --------------------------------------------------------------------------- #
+# Data analysis (pandas + matplotlib)
+# --------------------------------------------------------------------------- #
+def _read_dataframe(fs):
+    name = (fs.filename or "").lower()
+    if name.endswith(".csv"):
+        return pd.read_csv(fs), None
+    if name.endswith((".xlsx", ".xls")):
+        return pd.read_excel(fs), None
+    return None, "Please upload a .csv or Excel (.xlsx) file."
+
+
+def _fig_uri(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=92, bbox_inches="tight")
+    plt.close(fig)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def _make_charts(df):
+    charts = []
+    num = df.select_dtypes("number")
+    for col in list(num.columns)[:3]:
+        s = df[col].dropna()
+        if s.empty:
+            continue
+        fig, ax = plt.subplots(figsize=(4.2, 3))
+        ax.hist(s, bins=20, color="#6366f1")
+        ax.set_title("Distribution — " + str(col), fontsize=10)
+        ax.tick_params(labelsize=7)
+        charts.append({"title": "Distribution of %s" % col, "img": _fig_uri(fig)})
+    for col in list(df.select_dtypes(exclude="number").columns)[:1]:
+        vc = df[col].astype(str).value_counts().head(10)
+        if 1 < len(vc) <= 30:
+            fig, ax = plt.subplots(figsize=(4.2, 3))
+            vc.plot.bar(ax=ax, color="#22d3ee")
+            ax.set_title("Top values — " + str(col), fontsize=10)
+            ax.tick_params(labelsize=7)
+            charts.append({"title": "Value counts of %s" % col, "img": _fig_uri(fig)})
+    if num.shape[1] >= 2:
+        corr = num.corr(numeric_only=True)
+        fig, ax = plt.subplots(figsize=(4.6, 3.6))
+        im = ax.imshow(corr, cmap="viridis", vmin=-1, vmax=1)
+        ax.set_xticks(range(len(corr.columns)))
+        ax.set_xticklabels(corr.columns, rotation=90, fontsize=6)
+        ax.set_yticks(range(len(corr.columns)))
+        ax.set_yticklabels(corr.columns, fontsize=6)
+        fig.colorbar(im, fraction=0.046)
+        ax.set_title("Correlation", fontsize=10)
+        charts.append({"title": "Correlation heatmap", "img": _fig_uri(fig)})
+    return charts
+
+
+@app.route("/analyze", methods=["GET", "POST"])
+@login_required
+@limiter.limit("30 per hour")
+def analyze():
+    if request.method == "GET" or not ANALYSIS_OK:
+        return render_template("analyze.html", available=ANALYSIS_OK)
+
+    upload = request.files.get("dataset")
+    if not upload or not upload.filename:
+        flash("Upload a CSV or Excel file.", "error")
+        return render_template("analyze.html", available=True), 400
+    try:
+        df, err = _read_dataframe(upload)
+    except Exception as exc:  # noqa: BLE001
+        flash("Couldn't read that file: %s" % exc, "error")
+        return render_template("analyze.html", available=True), 400
+    if err:
+        flash(err, "error")
+        return render_template("analyze.html", available=True), 400
+
+    if df.shape[1] > 60:
+        df = df.iloc[:, :60]
+    raw_rows = len(df)
+
+    # ---- cleaning ----
+    ops = request.form.getlist("clean")
+    log = []
+    if "dedupe" in ops:
+        before = len(df); df = df.drop_duplicates()
+        log.append("Removed %d duplicate rows." % (before - len(df)))
+    if "dropna" in ops:
+        before = len(df); df = df.dropna()
+        log.append("Dropped %d rows with missing values." % (before - len(df)))
+    if "fillnum" in ops:
+        num_cols = df.select_dtypes("number").columns
+        df[num_cols] = df[num_cols].fillna(df[num_cols].mean(numeric_only=True))
+        log.append("Filled missing numeric values with the column mean.")
+    if "fillcat" in ops:
+        for c in df.select_dtypes(exclude="number").columns:
+            if df[c].isna().any() and not df[c].mode(dropna=True).empty:
+                df[c] = df[c].fillna(df[c].mode(dropna=True)[0])
+        log.append("Filled missing text values with the most frequent value.")
+
+    # work on a sample for stats/charts if very large
+    work = df.sample(20000, random_state=1) if len(df) > 20000 else df
+
+    columns = []
+    for c in df.columns:
+        miss = int(df[c].isna().sum())
+        columns.append({"name": str(c), "dtype": str(df[c].dtype), "missing": miss,
+                        "missing_pct": round(miss * 100 / max(len(df), 1), 1),
+                        "unique": int(df[c].nunique(dropna=True))})
+
+    stats = {
+        "rows": len(df), "raw_rows": raw_rows, "cols": df.shape[1],
+        "missing": int(df.isna().sum().sum()),
+        "duplicates": int(df.duplicated().sum()),
+        "sampled": len(df) > 20000,
+    }
+    describe_html = ""
+    num = work.select_dtypes("number")
+    if not num.empty:
+        describe_html = num.describe().round(3).to_html(classes="data-table", border=0)
+    preview_html = df.head(8).to_html(classes="data-table", border=0, index=False)
+
+    try:
+        charts = _make_charts(work)
+    except Exception as exc:  # noqa: BLE001
+        app.logger.warning("chart error: %s", exc)
+        charts = []
+
+    return render_template("analyze.html", available=True, done=True,
+                           filename=upload.filename, stats=stats, columns=columns,
+                           describe_html=describe_html, preview_html=preview_html,
+                           charts=charts, clean_log=log)
+
+
 @app.route("/health")
 def health():
     return jsonify(gemini_configured=bool(os.environ.get("GEMINI_API_KEY")),
                    model=GEMINI_MODEL, pdf=PdfReader is not None, docx=docx is not None,
+                   analysis=ANALYSIS_OK,
                    db=app.config["SQLALCHEMY_DATABASE_URI"].split(":")[0])
 
 
