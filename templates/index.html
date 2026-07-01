@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Nova — AI Assistant{% endblock %}
+
+{% block body %}
+<main class="wrap launcher">
+  <header class="hero">
+    <span class="eyebrow">AI Assistant</span>
+    <h1>What can I help you with?</h1>
+    <p>Pick a tool to get started. More are on the way.</p>
+  </header>
+
+  <div class="feature-grid">
+    {% for f in features %}
+      {% if f.ready %}
+      <a class="feature-card" href="{{ f.url }}">
+        <span class="fc-icon">{{ f.icon }}</span>
+        <h3>{{ f.title }}</h3>
+        <p>{{ f.desc }}</p>
+        <span class="fc-go">Open →</span>
+      </a>
+      {% else %}
+      <div class="feature-card disabled">
+        <span class="fc-icon">{{ f.icon }}</span>
+        <h3>{{ f.title }}</h3>
+        <p>{{ f.desc }}</p>
+        <span class="fc-soon">Coming soon</span>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</main>
+{% endblock %}

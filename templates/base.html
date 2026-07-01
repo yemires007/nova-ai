@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Nova — AI Assistant{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<nav>
+  <div class="wrap nav-in">
+    <a href="{{ url_for('index') }}" class="brand">◆ Nova</a>
+    <a href="{{ url_for('index') }}" class="nav-menu">Menu</a>
+  </div>
+</nav>
+
+{% block body %}{% endblock %}
+
+<footer>
+  <div class="wrap"><p>Nova — a portfolio demo by Adeyemi Oluwaseyi Alao · AI chat via Google Gemini</p></div>
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Render Blueprint — deploys Nova (AI assistant).
+# On Render: New + -> Blueprint -> connect this repo. Render reads this file
+# and will PROMPT you to enter GEMINI_API_KEY (it's marked sync:false so it
+# never lives in the repo).
+services:
+  - type: web
+    name: nova-ai
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.3"
+      - key: GEMINI_API_KEY
+        sync: false            # enter your free Google AI Studio key in the dashboard
+      - key: GEMINI_MODEL
+        value: "gemini-1.5-flash"
