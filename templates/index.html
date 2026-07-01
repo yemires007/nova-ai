@@ -33,13 +33,26 @@
   </div>
   <div class="feature-grid">
     {% for t in pro_tools %}
-      <div class="feature-card pro-card{{ '' if (user and user.is_pro) else ' locked' }}">
-        <span class="fc-icon">{{ t.icon }}</span>
-        <h3>{{ t.title }}</h3>
-        <p>{{ t.desc }}</p>
-        {% if user and user.is_pro %}<span class="fc-lock">✨ Coming soon</span>
-        {% else %}<a href="{{ url_for('pricing') }}" class="fc-lock">🔒 Pro feature</a>{% endif %}
-      </div>
+      {% set is_pro = user and user.is_pro %}
+      {% if t.endpoint and is_pro %}
+        <a class="feature-card pro-card" href="{{ url_for(t.endpoint) }}">
+          <span class="fc-icon">{{ t.icon }}</span>
+          <h3>{{ t.title }}</h3><p>{{ t.desc }}</p>
+          <span class="fc-go">Open →</span>
+        </a>
+      {% elif t.endpoint %}
+        <a class="feature-card pro-card locked" href="{{ url_for('pricing') }}">
+          <span class="fc-icon">{{ t.icon }}</span>
+          <h3>{{ t.title }}</h3><p>{{ t.desc }}</p>
+          <span class="fc-lock">🔒 Pro feature</span>
+        </a>
+      {% else %}
+        <div class="feature-card pro-card locked">
+          <span class="fc-icon">{{ t.icon }}</span>
+          <h3>{{ t.title }}</h3><p>{{ t.desc }}</p>
+          <span class="fc-lock">✨ Coming soon</span>
+        </div>
+      {% endif %}
     {% endfor %}
   </div>
 </main>

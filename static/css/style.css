@@ -219,6 +219,44 @@ footer p{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .msg.bot .mermaid{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin:.6em 0;overflow-x:auto}
 .msg.bot .katex-display{overflow-x:auto;overflow-y:hidden}
 
+/* rich markdown container (.md) — study, analysis insights, transcript */
+.md{font-size:15px;line-height:1.65;color:var(--ink)}
+.md h1,.md h2,.md h3{margin:.5em 0 .3em;line-height:1.25}
+.md h3{font-size:1.05em;color:var(--primary-deep)}
+.md p{margin:.5em 0}
+.md ul,.md ol{margin:.4em 0 .4em 1.2em;display:grid;gap:.25em}
+.md pre{background:#0d1117;border-radius:10px;padding:14px 16px;overflow-x:auto;margin:.6em 0}
+.md pre code{font-family:var(--mono);font-size:13px;color:#e6edf3;background:none;padding:0}
+.md code{font-family:var(--mono);font-size:.9em;background:#eef0fe;padding:2px 6px;border-radius:5px}
+.md table{border-collapse:collapse;margin:.6em 0;font-size:14px;width:100%}
+.md th,.md td{border:1px solid var(--line);padding:7px 11px;text-align:left}
+.md th{background:#f3f4fb}
+.md blockquote{border-left:3px solid var(--primary);margin:.5em 0;padding:.2em 0 .2em 12px;color:var(--ink-soft)}
+.md .mermaid{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin:.6em 0;overflow-x:auto}
+.ai-insight{background:linear-gradient(135deg,#eef0fe,#e6f9fd);border:1px solid #d4d9fb;border-radius:14px;padding:18px 20px;margin:18px 0}
+.ai-insight .an-h{margin-top:0}
+
+/* productivity */
+.prod-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-bottom:18px}
+@media(max-width:720px){.prod-grid{grid-template-columns:1fr}}
+.panel-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 14px 36px -30px rgba(23,26,43,.5);margin-bottom:18px}
+.panel-card h3{font-size:16px;margin-bottom:14px}
+.inline-form{display:flex;gap:8px;margin-bottom:14px}
+.inline-form.col{flex-direction:column}
+.inline-form input,.inline-form textarea{flex:1;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:14.5px;font-family:var(--body)}
+.inline-form input:focus,.inline-form textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+.task-list{list-style:none;display:grid;gap:8px}
+.task-list li{display:flex;align-items:center;gap:10px;font-size:15px}
+.task-list li.done .task-text{text-decoration:line-through;color:var(--muted)}
+.task-list form{display:inline;margin:0}
+.task-text{flex:1}
+.task-text .due{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-left:8px}
+.check{background:none;border:0;font-size:20px;cursor:pointer;line-height:1;color:var(--primary)}
+.note-list{display:grid;gap:10px}
+.note-item{border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.note-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.note-item p{font-size:14px;color:var(--ink-soft);margin-top:6px;white-space:pre-wrap}
+
 /* theme toggle */
 .theme-toggle{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);color:#fff;width:34px;height:34px;border-radius:9px;cursor:pointer;font-size:15px;line-height:1}
 .theme-toggle:hover{background:rgba(255,255,255,.18)}
@@ -264,7 +302,11 @@ footer p{font-family:var(--mono);font-size:12px;color:var(--muted)}
 [data-theme="dark"] .job-card,[data-theme="dark"] .scholar-card,[data-theme="dark"] .hist-row,
 [data-theme="dark"] .summary-row,[data-theme="dark"] .msg.bot,[data-theme="dark"] .chat-input,
 [data-theme="dark"] .stat-row .stat,[data-theme="dark"] .chart,[data-theme="dark"] .table-scroll,
-[data-theme="dark"] .dropzone,[data-theme="dark"] .clean-opts,[data-theme="dark"] .stat{background:#171a2e}
+[data-theme="dark"] .dropzone,[data-theme="dark"] .clean-opts,[data-theme="dark"] .stat,
+[data-theme="dark"] .panel-card,[data-theme="dark"] .note-item{background:#171a2e}
+[data-theme="dark"] .ai-insight{background:#1a1e36;border-color:#2a2e48}
+[data-theme="dark"] .md code{background:#232744;color:#e8eaf5}
+[data-theme="dark"] .md th,[data-theme="dark"] .md .mermaid{background:#20243c}
 [data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] textarea,
 [data-theme="dark"] .suggest button,[data-theme="dark"] .mini-del,[data-theme="dark"] .qbtn{background:#1e2138;color:var(--ink);border-color:#2a2e48}
 [data-theme="dark"] .eyebrow{background:#241f3f;color:#c7cbf5}

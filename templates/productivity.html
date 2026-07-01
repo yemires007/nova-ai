@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Productivity — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap tool">
+  <div class="tool-head"><a href="{{ url_for('index') }}" class="back">← Menu</a><h2>Smart Productivity <span class="plan-badge pro">PRO</span></h2></div>
+
+  <div class="prod-grid">
+    <!-- Tasks -->
+    <section class="panel-card">
+      <h3>✅ Tasks</h3>
+      <form method="POST" action="{{ url_for('task_add') }}" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="text" placeholder="Add a task…" required>
+        <input type="date" name="due" title="Due date (optional)">
+        <button class="btn-solid" type="submit">Add</button>
+      </form>
+      <ul class="task-list">
+        {% for t in tasks %}
+        <li class="{{ 'done' if t.done }}">
+          <form method="POST" action="{{ url_for('task_toggle', tid=t.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="check" title="Toggle">{{ '☑' if t.done else '☐' }}</button>
+          </form>
+          <span class="task-text">{{ t.text }}{% if t.due %}<span class="due">📅 {{ t.due }}</span>{% endif %}</span>
+          <form method="POST" action="{{ url_for('task_delete', tid=t.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="mini-del" title="Delete">🗑</button>
+          </form>
+        </li>
+        {% else %}<li class="muted">No tasks yet.</li>{% endfor %}
+      </ul>
+    </section>
+
+    <!-- Notes -->
+    <section class="panel-card">
+      <h3>🗒️ Notes</h3>
+      <form method="POST" action="{{ url_for('note_add') }}" class="inline-form col">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="title" placeholder="Note title…" required>
+        <textarea name="body" rows="2" placeholder="Details (optional)…"></textarea>
+        <button class="btn-solid" type="submit">Save note</button>
+      </form>
+      <div class="note-list">
+        {% for n in notes %}
+        <div class="note-item">
+          <div class="note-top"><b>{{ n.title }}</b>
+            <form method="POST" action="{{ url_for('note_delete', nid=n.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="mini-del" title="Delete">🗑</button>
+            </form>
+          </div>
+          {% if n.body %}<p>{{ n.body }}</p>{% endif %}
+        </div>
+        {% else %}<p class="muted">No notes yet.</p>{% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <!-- Transcript -> action items -->
+  <section class="panel-card">
+    <h3>🎙️ Meeting transcript → action items</h3>
+    <form method="POST" action="{{ url_for('transcript') }}" class="inline-form col">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="transcript" rows="5" placeholder="Paste a meeting transcript…"></textarea>
+      <button class="btn-solid" type="submit">Extract summary &amp; actions →</button>
+    </form>
+    {% if transcript_error %}<div class="flash error">{{ transcript_error }}</div>{% endif %}
+    {% if transcript_result %}<div class="md" data-md>{{ transcript_result }}</div>{% endif %}
+  </section>
+</main>
+{% endblock %}
+
+{% block scripts %}{% include "_richlibs.html" %}{% endblock %}

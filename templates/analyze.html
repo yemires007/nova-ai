@@ -42,6 +42,13 @@
     </div>
     {% if stats.sampled %}<p class="muted">Charts &amp; stats use a 20,000-row sample of your {{ stats.raw_rows }} rows.</p>{% endif %}
 
+    {% if interpretation %}
+    <div class="ai-insight">
+      <h4 class="an-h">🧠 AI interpretation</h4>
+      <div class="md" data-md>{{ interpretation }}</div>
+    </div>
+    {% endif %}
+
     {% if charts %}
     <h4 class="an-h">Visualizations</h4>
     <div class="chart-grid">
@@ -74,3 +81,5 @@
   {% endif %}
 </main>
 {% endblock %}
+
+{% block scripts %}{% if done %}{% include "_richlibs.html" %}{% endif %}{% endblock %}

@@ -161,6 +161,23 @@ class SavedSummary(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow)
 
 
+class Task(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    text = db.Column(db.String(300), nullable=False)
+    done = db.Column(db.Boolean, default=False)
+    due = db.Column(db.String(20))                 # optional YYYY-MM-DD
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+
+class Note(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    title = db.Column(db.String(160), nullable=False)
+    body = db.Column(db.Text, default="")
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+
 with app.app_context():
     db.create_all()
 
@@ -179,6 +196,20 @@ def login_required(view):
         if current_user() is None:
             flash("Please log in to use that feature.", "error")
             return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def pro_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        u = current_user()
+        if u is None:
+            flash("Please log in first.", "error")
+            return redirect(url_for("login", next=request.path))
+        if not u.is_pro:
+            flash("That's a Pro feature — upgrade to unlock it.", "error")
+            return redirect(url_for("pricing"))
         return view(*args, **kwargs)
     return wrapped
 
@@ -232,22 +263,27 @@ def server_error(_e):
 # --------------------------------------------------------------------------- #
 FEATURES = [
     {"icon": "💬", "title": "Chat with AI",
-     "desc": "Ask anything, with rich formatted answers.", "endpoint": "chat_page", "gated": False},
+     "desc": "Ask anything, with rich formatted answers.", "endpoint": "chat_page", "gated": False, "pro": False},
     {"icon": "📝", "title": "Summarize text or document",
-     "desc": "Paste text or upload Word/PDF/txt and get the gist.", "endpoint": "summarize", "gated": True},
+     "desc": "Paste text or upload Word/PDF/txt and get the gist.", "endpoint": "summarize", "gated": True, "pro": False},
     {"icon": "💼", "title": "Job search",
-     "desc": "Find the latest remote jobs by keyword, category & location.", "endpoint": "jobs", "gated": True},
+     "desc": "Find the latest remote jobs by keyword, category & location.", "endpoint": "jobs", "gated": True, "pro": False},
     {"icon": "🎓", "title": "Scholarship updates",
-     "desc": "Browse current scholarship opportunities.", "endpoint": "scholarships", "gated": True},
-    {"icon": "📊", "title": "Data analysis",
-     "desc": "Upload a CSV/Excel — clean it, profile it, and visualize it.", "endpoint": "analyze", "gated": True},
+     "desc": "Browse current scholarship opportunities.", "endpoint": "scholarships", "gated": True, "pro": False},
 ]
 
+# Pro-only tools. `endpoint` = live; None = coming soon.
 PRO_TOOLS = [
-    {"icon": "📚", "title": "AI Study Mode", "desc": "Flashcards, quizzes and guided learning."},
-    {"icon": "✅", "title": "Smart Productivity", "desc": "Tasks, reminders, notes & meeting summaries."},
-    {"icon": "🤝", "title": "Collaboration", "desc": "Share chats and work with your team."},
-    {"icon": "⚡", "title": "Custom Workflows", "desc": "Automate: summarize → translate → save → notify."},
+    {"icon": "📊", "title": "Data analysis", "endpoint": "analyze",
+     "desc": "Upload a CSV/Excel — clean, profile, visualize & get AI insights."},
+    {"icon": "📚", "title": "AI Study Mode", "endpoint": "study",
+     "desc": "Turn notes into flashcards, quizzes and key points."},
+    {"icon": "✅", "title": "Smart Productivity", "endpoint": "productivity",
+     "desc": "Tasks, notes, and meeting-transcript action items."},
+    {"icon": "🤝", "title": "Collaboration", "endpoint": None,
+     "desc": "Share chats and work with your team. (Coming soon)"},
+    {"icon": "⚡", "title": "Custom Workflows", "endpoint": None,
+     "desc": "Automate: summarize → translate → save → notify. (Coming soon)"},
 ]
 
 SCHOLARSHIPS = [
@@ -696,7 +732,7 @@ def _make_charts(df):
 
 
 @app.route("/analyze", methods=["GET", "POST"])
-@login_required
+@pro_required
 @limiter.limit("30 per hour")
 def analyze():
     if request.method == "GET" or not ANALYSIS_OK:
@@ -766,10 +802,162 @@ def analyze():
         app.logger.warning("chart error: %s", exc)
         charts = []
 
+    interpretation = _interpret_dataset(work, stats, columns)
+
     return render_template("analyze.html", available=True, done=True,
                            filename=upload.filename, stats=stats, columns=columns,
                            describe_html=describe_html, preview_html=preview_html,
-                           charts=charts, clean_log=log)
+                           charts=charts, clean_log=log, interpretation=interpretation)
+
+
+def _interpret_dataset(df, stats, columns):
+    """Ask Gemini to interpret the profile + correlations (Markdown). None if unavailable."""
+    lines = [f"Dataset: {stats['rows']} rows x {stats['cols']} columns.",
+             f"Total missing cells: {stats['missing']}. Duplicate rows: {stats['duplicates']}.",
+             "Columns (name: dtype, missing%, unique values):"]
+    for c in columns[:40]:
+        lines.append(f"- {c['name']}: {c['dtype']}, {c['missing_pct']}% missing, {c['unique']} unique")
+    num = df.select_dtypes("number")
+    if num.shape[1] >= 2:
+        corr = num.corr(numeric_only=True)
+        cols = list(corr.columns)
+        pairs = []
+        for i in range(len(cols)):
+            for j in range(i + 1, len(cols)):
+                v = corr.iloc[i, j]
+                if pd.notna(v) and abs(v) >= 0.5:
+                    pairs.append((abs(v), cols[i], cols[j], round(float(v), 2)))
+        pairs.sort(reverse=True)
+        if pairs:
+            lines.append("Strong correlations:")
+            for _, a1, b1, v in pairs[:6]:
+                lines.append(f"- {a1} vs {b1}: {v}")
+    prompt = (
+        "You are a senior data analyst. Based on this dataset profile, write a "
+        "concise interpretation in Markdown with three short sections using "
+        "'###' headings: Data quality, Key patterns, and Suggested next steps. "
+        "Use bullet points; be specific and practical.\n\n" + "\n".join(lines)
+    )
+    reply, err = gemini_reply([{"role": "user", "text": prompt}])
+    return None if err else reply
+
+
+# --------------------------------------------------------------------------- #
+# Study Mode (Pro) — Gemini-generated learning material
+# --------------------------------------------------------------------------- #
+STUDY_MODES = {
+    "flashcards": "Create 8–10 study flashcards from the material. Format each as "
+                  "'**Q:** …' on one line then '**A:** …' on the next.",
+    "quiz": "Create a 6-question multiple-choice quiz (options A–D). Put an "
+            "**Answer key** at the very end.",
+    "keypoints": "Summarise the material into concise key points as a bulleted "
+                 "list, bolding the important terms.",
+    "explain": "Explain the material simply, as if teaching a beginner — include "
+               "a short analogy and an example.",
+}
+
+
+@app.route("/study", methods=["GET", "POST"])
+@pro_required
+@limiter.limit("30 per hour")
+def study():
+    if request.method == "GET":
+        return render_template("study.html")
+    topic = request.form.get("topic", "").strip()
+    mode = request.form.get("mode", "keypoints")
+    if not topic:
+        flash("Enter a topic or paste your notes.", "error")
+        return render_template("study.html"), 400
+    instr = STUDY_MODES.get(mode, STUDY_MODES["keypoints"])
+    reply, err = gemini_reply([{"role": "user", "text": f"{instr}\n\nMaterial / topic:\n{topic[:6000]}"}])
+    if err:
+        flash(err, "error")
+        return render_template("study.html", topic=topic, mode=mode), 502
+    return render_template("study.html", topic=topic, mode=mode, result=reply)
+
+
+# --------------------------------------------------------------------------- #
+# Productivity (Pro) — tasks, notes, transcript action-items
+# --------------------------------------------------------------------------- #
+@app.route("/productivity")
+@pro_required
+def productivity():
+    uid = current_user().id
+    tasks = Task.query.filter_by(user_id=uid).order_by(Task.done, Task.id.desc()).all()
+    notes = Note.query.filter_by(user_id=uid).order_by(Note.id.desc()).all()
+    return render_template("productivity.html", tasks=tasks, notes=notes)
+
+
+@app.route("/task/add", methods=["POST"])
+@pro_required
+def task_add():
+    text = request.form.get("text", "").strip()
+    due = request.form.get("due", "").strip() or None
+    if text:
+        db.session.add(Task(user_id=current_user().id, text=text[:300], due=due))
+        db.session.commit()
+    return redirect(url_for("productivity"))
+
+
+@app.route("/task/<int:tid>/toggle", methods=["POST"])
+@pro_required
+def task_toggle(tid):
+    t = db.session.get(Task, tid)
+    if t and t.user_id == current_user().id:
+        t.done = not t.done
+        db.session.commit()
+    return redirect(url_for("productivity"))
+
+
+@app.route("/task/<int:tid>/delete", methods=["POST"])
+@pro_required
+def task_delete(tid):
+    t = db.session.get(Task, tid)
+    if t and t.user_id == current_user().id:
+        db.session.delete(t)
+        db.session.commit()
+    return redirect(url_for("productivity"))
+
+
+@app.route("/note/add", methods=["POST"])
+@pro_required
+def note_add():
+    title = request.form.get("title", "").strip()
+    body = request.form.get("body", "").strip()
+    if title:
+        db.session.add(Note(user_id=current_user().id, title=title[:160], body=body))
+        db.session.commit()
+    return redirect(url_for("productivity"))
+
+
+@app.route("/note/<int:nid>/delete", methods=["POST"])
+@pro_required
+def note_delete(nid):
+    n = db.session.get(Note, nid)
+    if n and n.user_id == current_user().id:
+        db.session.delete(n)
+        db.session.commit()
+    return redirect(url_for("productivity"))
+
+
+@app.route("/transcript", methods=["POST"])
+@pro_required
+@limiter.limit("20 per hour")
+def transcript():
+    text = request.form.get("transcript", "").strip()
+    uid = current_user().id
+    tasks = Task.query.filter_by(user_id=uid).order_by(Task.done, Task.id.desc()).all()
+    notes = Note.query.filter_by(user_id=uid).order_by(Note.id.desc()).all()
+    if not text:
+        flash("Paste a meeting transcript first.", "error")
+        return render_template("productivity.html", tasks=tasks, notes=notes), 400
+    prompt = ("Summarise this meeting transcript in Markdown with three '###' "
+              "sections: Summary (2–3 lines), Decisions, and Action items "
+              "(each as '- [ ] owner — task'):\n\n" + text[:8000])
+    reply, err = gemini_reply([{"role": "user", "text": prompt}])
+    return render_template("productivity.html", tasks=tasks, notes=notes,
+                           transcript_result=(None if err else reply),
+                           transcript_error=err)
 
 
 @app.route("/health")

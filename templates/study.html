@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Study Mode — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap tool">
+  <div class="tool-head"><a href="{{ url_for('index') }}" class="back">← Menu</a><h2>AI Study Mode <span class="plan-badge pro">PRO</span></h2></div>
+
+  <form method="POST" action="{{ url_for('study') }}" class="tool-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Topic or notes
+      <textarea name="topic" rows="6" placeholder="Paste your notes, or type a topic like “photosynthesis” or “TCP vs UDP”…">{{ topic or '' }}</textarea>
+    </label>
+    <label>Mode
+      <select name="mode">
+        <option value="keypoints" {{ 'selected' if mode=='keypoints' }}>Key points</option>
+        <option value="flashcards" {{ 'selected' if mode=='flashcards' }}>Flashcards</option>
+        <option value="quiz" {{ 'selected' if mode=='quiz' }}>Quiz</option>
+        <option value="explain" {{ 'selected' if mode=='explain' }}>Explain simply</option>
+      </select>
+    </label>
+    <button type="submit" class="btn-solid">Generate →</button>
+  </form>
+
+  {% if result %}
+  <section class="result-card">
+    <h3>Study material</h3>
+    <div class="md" data-md>{{ result }}</div>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}
+
+{% block scripts %}{% include "_richlibs.html" %}{% endblock %}
