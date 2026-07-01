@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Forgot password — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap auth">
+  <div class="auth-card">
+    <h2>Reset your password</h2>
+    <form method="POST" action="{{ url_for('forgot') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Email<input type="email" name="email" autocomplete="email" required></label>
+      <button type="submit" class="btn-solid full">Send reset link</button>
+    </form>
+    {% if dev_link %}
+    <p class="auth-alt">Email isn't configured, so here's your link (dev):<br>
+      <a href="{{ dev_link }}">{{ dev_link }}</a></p>
+    {% endif %}
+    <p class="auth-alt"><a href="{{ url_for('login') }}">Back to log in</a></p>
+  </div>
+</main>
+{% endblock %}

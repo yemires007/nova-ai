@@ -25,3 +25,9 @@ services:
         sync: false            # enter your free Google AI Studio key in the dashboard
       - key: GEMINI_MODEL
         value: "gemini-2.5-flash"
+      - key: PAYSTACK_SECRET_KEY
+        sync: false            # optional — real payments (demo upgrade if blank)
+      - key: RESEND_API_KEY
+        sync: false            # optional — password-reset email (on-screen link if blank)
+      - key: MAIL_FROM
+        sync: false            # optional — verified Resend sender address

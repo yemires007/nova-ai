@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Set a new password — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap auth">
+  <div class="auth-card">
+    <h2>Set a new password</h2>
+    <form method="POST" action="{{ url_for('reset_password', token=token) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>New password<input type="password" name="password" minlength="6" required></label>
+      <label>Confirm password<input type="password" name="confirm" minlength="6" required></label>
+      <button type="submit" class="btn-solid full">Update password</button>
+    </form>
+  </div>
+</main>
+{% endblock %}

@@ -8,6 +8,7 @@
     <form method="POST" action="{{ url_for('register') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>Name<input type="text" name="name" value="{{ form.name if form else '' }}" required></label>
+      <label>Email<input type="email" name="email" value="{{ form.email if form else '' }}" required></label>
       <label>Username<input type="text" name="username" value="{{ form.username if form else '' }}" required></label>
       <label>Password<input type="password" name="password" minlength="6" required></label>
       <label>Confirm password<input type="password" name="confirm" minlength="6" required></label>

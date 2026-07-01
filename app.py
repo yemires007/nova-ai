@@ -20,7 +20,7 @@ import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -59,21 +59,23 @@ except ImportError:
 import base64
 import io
 try:
-    import markdown as md_lib
-except ImportError:
-    md_lib = None
-try:
-    from xhtml2pdf import pisa
-except ImportError:
-    pisa = None
-try:
     import pandas as pd
-    import matplotlib
-    matplotlib.use("Agg")            # headless server rendering
-    import matplotlib.pyplot as plt
     ANALYSIS_OK = True
 except Exception:                    # noqa: BLE001
+    pd = None
     ANALYSIS_OK = False
+
+_plt_cache = {}
+
+
+def _plt():
+    """Lazy-load matplotlib (heavy) only when a chart is actually rendered."""
+    if "plt" not in _plt_cache:
+        import matplotlib
+        matplotlib.use("Agg")        # headless server rendering
+        import matplotlib.pyplot as plt
+        _plt_cache["plt"] = plt
+    return _plt_cache["plt"]
 
 
 def _db_uri():
@@ -150,8 +152,11 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(200), unique=True)          # for payments + reset
     pwd_hash = db.Column(db.String(255), nullable=False)
     plan = db.Column(db.String(20), nullable=False, default="free")  # free | pro
+    reset_token = db.Column(db.String(64))
+    reset_expires = db.Column(db.String(40))
     created_at = db.Column(db.DateTime, default=utcnow)
     conversations = db.relationship("Conversation", backref="user", lazy=True,
                                     cascade="all, delete-orphan")
@@ -225,8 +230,29 @@ class Comment(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow)
 
 
+def ensure_schema():
+    """Add newly-introduced columns to existing tables (no Alembic needed)."""
+    from sqlalchemy import text, inspect
+    with app.app_context():
+        insp = inspect(db.engine)
+        try:
+            cols = {c["name"] for c in insp.get_columns("user")}
+        except Exception:
+            return
+        wanted = {"email": "VARCHAR(200)", "reset_token": "VARCHAR(64)",
+                  "reset_expires": "VARCHAR(40)"}
+        for col, ddl in wanted.items():
+            if col not in cols:
+                try:
+                    with db.engine.begin() as conn:
+                        conn.execute(text('ALTER TABLE "user" ADD COLUMN %s %s' % (col, ddl)))
+                except Exception as exc:  # noqa: BLE001
+                    app.logger.warning("Could not add column %s: %s", col, exc)
+
+
 with app.app_context():
     db.create_all()
+ensure_schema()
 
 
 # --------------------------------------------------------------------------- #
@@ -532,19 +558,25 @@ def register():
         return render_template("register.html")
     f = request.form
     name, username = f.get("name", "").strip(), f.get("username", "").strip()
+    email = f.get("email", "").strip().lower()
     pwd, confirm = f.get("password", ""), f.get("confirm", "")
     if not name:
         flash("Please enter your name.", "error")
     elif len(username) < 3:
         flash("Username must be at least 3 characters.", "error")
+    elif not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        flash("Please enter a valid email.", "error")
     elif len(pwd) < 6:
         flash("Password must be at least 6 characters.", "error")
     elif pwd != confirm:
         flash("Passwords do not match.", "error")
     elif User.query.filter_by(username=username).first():
         flash("That username is taken.", "error")
+    elif User.query.filter_by(email=email).first():
+        flash("That email is already registered.", "error")
     else:
-        db.session.add(User(name=name, username=username, pwd_hash=generate_password_hash(pwd)))
+        db.session.add(User(name=name, username=username, email=email,
+                            pwd_hash=generate_password_hash(pwd)))
         db.session.commit()
         flash("Account created — please log in.", "success")
         return redirect(url_for("login"))
@@ -575,6 +607,77 @@ def logout():
     return redirect(url_for("index"))
 
 
+def send_email(to, subject, html):
+    key = os.environ.get("RESEND_API_KEY")
+    sender = os.environ.get("MAIL_FROM", "Nova <onboarding@resend.dev>")
+    if not key:
+        return False
+    body = json.dumps({"from": sender, "to": [to], "subject": subject,
+                       "html": html}).encode("utf-8")
+    req = urllib.request.Request("https://api.resend.com/emails", data=body,
+        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            resp.read()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        app.logger.warning("Resend failed: %s", exc)
+        return False
+
+
+@app.route("/forgot", methods=["GET", "POST"])
+@limiter.limit("10 per hour")
+def forgot():
+    if request.method == "GET":
+        return render_template("forgot.html")
+    email = request.form.get("email", "").strip().lower()
+    user = User.query.filter_by(email=email).first() if email else None
+    dev_link = None
+    if user:
+        token = secrets.token_urlsafe(24)
+        user.reset_token = token
+        user.reset_expires = (utcnow() + timedelta(hours=1)).isoformat()
+        db.session.commit()
+        link = url_for("reset_password", token=token, _external=True)
+        sent = send_email(user.email, "Reset your Nova password",
+                          "<p>Reset your password (valid 1 hour):</p>"
+                          "<p><a href='%s'>%s</a></p>" % (link, link))
+        if not sent:
+            dev_link = link   # shown on-screen when email isn't configured yet
+    flash("If that email is registered, we've sent a reset link.", "success")
+    return render_template("forgot.html", dev_link=dev_link)
+
+
+@app.route("/reset/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    user = User.query.filter_by(reset_token=token).first()
+    valid = False
+    if user and user.reset_expires:
+        try:
+            valid = datetime.fromisoformat(user.reset_expires) > utcnow()
+        except ValueError:
+            valid = False
+    if not valid:
+        flash("That reset link is invalid or has expired.", "error")
+        return redirect(url_for("forgot"))
+    if request.method == "GET":
+        return render_template("reset.html", token=token)
+    pwd, confirm = request.form.get("password", ""), request.form.get("confirm", "")
+    if len(pwd) < 6:
+        flash("Password must be at least 6 characters.", "error")
+        return render_template("reset.html", token=token), 400
+    if pwd != confirm:
+        flash("Passwords do not match.", "error")
+        return render_template("reset.html", token=token), 400
+    user.pwd_hash = generate_password_hash(pwd)
+    user.reset_token = None
+    user.reset_expires = None
+    db.session.commit()
+    flash("Password updated — please log in.", "success")
+    return redirect(url_for("login"))
+
+
 # --------------------------------------------------------------------------- #
 # Subscription
 # --------------------------------------------------------------------------- #
@@ -583,14 +686,68 @@ def pricing():
     return render_template("pricing.html", plans=PLANS)
 
 
+PRO_PRICE_KOBO = int(os.environ.get("PRO_PRICE_KOBO", "250000"))  # ₦2,500
+
+
 @app.route("/subscribe", methods=["POST"])
 @login_required
 def subscribe():
     user = current_user()
-    user.plan = "pro"
-    db.session.commit()
-    flash("🎉 You're on Pro now! (Demo upgrade — real billing via Paystack/Stripe coming.)", "success")
-    return redirect(url_for("index"))
+    key = os.environ.get("PAYSTACK_SECRET_KEY")
+    # Demo fallback when Paystack isn't configured (or user has no email)
+    if not key or not user.email:
+        user.plan = "pro"
+        db.session.commit()
+        flash("🎉 You're on Pro! (Demo upgrade — add a Paystack key for real billing.)", "success")
+        return redirect(url_for("index"))
+    # Real Paystack: initialize a transaction and redirect to checkout
+    body = json.dumps({
+        "email": user.email,
+        "amount": PRO_PRICE_KOBO,
+        "callback_url": url_for("payment_callback", _external=True),
+        "metadata": {"user_id": user.id},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.paystack.co/transaction/initialize", data=body,
+        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        auth_url = data["data"]["authorization_url"]
+    except Exception as exc:  # noqa: BLE001
+        app.logger.warning("Paystack init failed: %s", exc)
+        flash("Couldn't start checkout — please try again.", "error")
+        return redirect(url_for("pricing"))
+    return redirect(auth_url)
+
+
+@app.route("/payment/callback")
+@login_required
+def payment_callback():
+    user = current_user()
+    key = os.environ.get("PAYSTACK_SECRET_KEY")
+    reference = request.args.get("reference", "")
+    if not key or not reference:
+        flash("Payment could not be verified.", "error")
+        return redirect(url_for("pricing"))
+    req = urllib.request.Request(
+        "https://api.paystack.co/transaction/verify/" + urllib.parse.quote(reference),
+        headers={"Authorization": "Bearer " + key})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        ok = data.get("data", {}).get("status") == "success"
+    except Exception as exc:  # noqa: BLE001
+        app.logger.warning("Paystack verify failed: %s", exc)
+        ok = False
+    if ok:
+        user.plan = "pro"
+        db.session.commit()
+        flash("🎉 Payment confirmed — welcome to Pro!", "success")
+        return redirect(url_for("index"))
+    flash("Payment wasn't completed. You can try again.", "error")
+    return redirect(url_for("pricing"))
 
 
 @app.route("/downgrade", methods=["POST"])
@@ -769,11 +926,12 @@ def _read_dataframe(fs):
 def _fig_uri(fig):
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=92, bbox_inches="tight")
-    plt.close(fig)
+    _plt().close(fig)
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 def _make_charts(df):
+    plt = _plt()
     charts = []
     num = df.select_dtypes("number")
     for col in list(num.columns)[:3]:
@@ -1231,7 +1389,10 @@ def export_conversation(cid):
     safe = re.sub(r"[^a-zA-Z0-9]+", "-", convo.title)[:40].strip("-") or "chat"
 
     if fmt == "pdf":
-        if md_lib is None or pisa is None:
+        try:                                     # lazy-load the heavy PDF stack
+            import markdown as md_lib
+            from xhtml2pdf import pisa
+        except ImportError:
             flash("PDF export isn't available on the server.", "error")
             return redirect(url_for("history"))
         html = ("<html><head><meta charset='utf-8'><style>"
