@@ -23,9 +23,16 @@ from flask import Flask, jsonify, render_template, request
 
 BASE_DIR = Path(__file__).resolve().parent
 
+try:
+    from dotenv import load_dotenv
+    # load the .env sitting next to this file, regardless of the working dir
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    pass
+
 app = Flask(__name__)
 
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 SYSTEM_PROMPT = (
     "You are Nova, a friendly, concise AI assistant featured on Adeyemi "
     "Oluwaseyi Alao's portfolio. Answer helpfully and clearly. Use short "
