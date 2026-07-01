@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Custom Workflow — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap tool">
+  <div class="tool-head"><a href="{{ url_for('index') }}" class="back">← Menu</a><h2>Custom Workflow <span class="plan-badge pro">PRO</span></h2></div>
+  <p class="muted">Chain AI steps over your text or a document. Steps run top-to-bottom; each one transforms the previous result.</p>
+
+  <form method="POST" action="{{ url_for('workflow') }}" enctype="multipart/form-data" class="tool-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Input text
+      <textarea name="text" rows="5" placeholder="Paste text here…">{{ '' }}</textarea>
+    </label>
+    <div class="or">or</div>
+    <label class="dropzone">
+      <span class="dz-text">📄 Drag &amp; drop a PDF/Word/.txt — or click to choose</span>
+      <input type="file" name="document" accept=".txt,.md,.csv,.pdf,.docx">
+      <span class="dz-file"></span>
+    </label>
+
+    <fieldset class="clean-opts">
+      <legend>Steps (in order)</legend>
+      {% for key, label, _ in steps %}
+      <label class="chk"><input type="checkbox" name="steps" value="{{ key }}" {{ 'checked' if selected and key in selected }}> {{ label }}</label>
+      {% endfor %}
+    </fieldset>
+
+    <label>Translate into (used if “Translate” is selected)
+      <input type="text" name="lang" value="{{ lang or 'French' }}">
+    </label>
+    <label class="chk"><input type="checkbox" name="save_note" value="1"> Save the final result to my Notes</label>
+    <input type="text" name="note_title" placeholder="Note title (optional)">
+    <button type="submit" class="btn-solid">Run workflow →</button>
+  </form>
+
+  {% if results %}
+  <section class="analysis">
+    {% if saved %}<div class="clean-log"><span>✓ Final result saved to your Notes.</span></div>{% endif %}
+    <h3 class="an-file">Results — {{ source }}</h3>
+    {% for r in results %}
+    <div class="wf-step">
+      <div class="wf-badge">{{ loop.index }}. {{ r.label }}</div>
+      <div class="md" data-md>{{ r.output }}</div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+</main>
+{% endblock %}
+
+{% block scripts %}{% if results %}{% include "_richlibs.html" %}{% endif %}{% endblock %}

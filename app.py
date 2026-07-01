@@ -217,6 +217,14 @@ class Document(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow)
 
 
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    conversation_id = db.Column(db.Integer, db.ForeignKey("conversation.id"), nullable=False)
+    author = db.Column(db.String(80), nullable=False, default="Guest")
+    body = db.Column(db.String(1000), nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+
 with app.app_context():
     db.create_all()
 
@@ -321,10 +329,10 @@ PRO_TOOLS = [
      "desc": "Turn notes into flashcards, quizzes and key points."},
     {"icon": "✅", "title": "Smart Productivity", "endpoint": "productivity",
      "desc": "Tasks, notes, and meeting-transcript action items."},
+    {"icon": "⚡", "title": "Custom Workflows", "endpoint": "workflow",
+     "desc": "Chain AI steps: summarize → translate → improve → save to notes."},
     {"icon": "🤝", "title": "Collaboration", "endpoint": None,
-     "desc": "Share chats and work with your team. (Coming soon)"},
-    {"icon": "⚡", "title": "Custom Workflows", "endpoint": None,
-     "desc": "Automate: summarize → translate → save → notify. (Coming soon)"},
+     "desc": "Share chats (live) and comment. Team co-editing coming soon."},
 ]
 
 SCHOLARSHIPS = [
@@ -683,7 +691,8 @@ def shared(token):
     if not convo:
         abort(404)
     messages = [{"role": m.role, "text": m.content} for m in convo.messages]
-    return render_template("shared.html", convo=convo, messages=messages)
+    comments = Comment.query.filter_by(conversation_id=convo.id).order_by(Comment.id.desc()).all()
+    return render_template("shared.html", convo=convo, messages=messages, comments=comments)
 
 
 @app.route("/conversation/<int:cid>/delete", methods=["POST"])
@@ -1025,6 +1034,87 @@ def transcript():
     return render_template("productivity.html", tasks=tasks, notes=notes,
                            transcript_result=(None if err else reply),
                            transcript_error=err)
+
+
+# --------------------------------------------------------------------------- #
+# Custom workflows (Pro) — chain AI steps over text or a document
+# --------------------------------------------------------------------------- #
+WORKFLOW_STEPS = [
+    ("summarize", "Summarize", "Summarize the following text concisely."),
+    ("keypoints", "Key points", "Extract the key points as a bulleted list."),
+    ("actions", "Action items", "Extract clear action items as a Markdown checklist."),
+    ("simplify", "Simplify", "Rewrite the following in simple, plain language."),
+    ("improve", "Improve writing", "Improve the clarity, grammar and tone; return the improved version."),
+    ("translate", "Translate", "Translate the following into {lang}, preserving meaning."),
+]
+
+
+@app.route("/workflow", methods=["GET", "POST"])
+@pro_required
+@limiter.limit("15 per hour")
+def workflow():
+    if request.method == "GET":
+        return render_template("workflow.html", steps=WORKFLOW_STEPS)
+
+    text = request.form.get("text", "")
+    source = "pasted text"
+    upload = request.files.get("document")
+    if upload and upload.filename:
+        extracted, err = extract_file_text(upload)
+        if err:
+            flash(err, "error")
+            return render_template("workflow.html", steps=WORKFLOW_STEPS), 400
+        text, source = extracted, upload.filename
+    if not text.strip():
+        flash("Paste some text or upload a document to run a workflow.", "error")
+        return render_template("workflow.html", steps=WORKFLOW_STEPS), 400
+
+    selected = request.form.getlist("steps")
+    if not selected:
+        flash("Pick at least one step.", "error")
+        return render_template("workflow.html", steps=WORKFLOW_STEPS), 400
+    lang = request.form.get("lang", "French").strip() or "French"
+
+    current = text[:8000]
+    results = []
+    for key, label, instr in WORKFLOW_STEPS:          # fixed, sensible order
+        if key not in selected:
+            continue
+        prompt = (instr.format(lang=lang) if key == "translate" else instr) + "\n\n" + current
+        reply, err = gemini_reply([{"role": "user", "text": prompt}])
+        if err:
+            flash("Workflow stopped at '%s': %s" % (label, err), "error")
+            break
+        current = reply
+        results.append({"label": label, "output": reply})
+
+    saved = False
+    if results and request.form.get("save_note"):
+        title = (request.form.get("note_title", "").strip() or ("Workflow — " + source))[:160]
+        db.session.add(Note(user_id=current_user().id, title=title, body=current[:8000]))
+        db.session.commit()
+        saved = True
+
+    return render_template("workflow.html", steps=WORKFLOW_STEPS, results=results,
+                           source=source, saved=saved, selected=selected, lang=lang)
+
+
+# --------------------------------------------------------------------------- #
+# Comments on shared chats
+# --------------------------------------------------------------------------- #
+@app.route("/s/<token>/comment", methods=["POST"])
+@limiter.limit("10 per hour")
+def add_comment(token):
+    convo = Conversation.query.filter_by(share_token=token, is_public=True).first()
+    if not convo:
+        abort(404)
+    author = (request.form.get("author", "").strip() or "Guest")[:80]
+    body = request.form.get("body", "").strip()[:1000]
+    if body:
+        db.session.add(Comment(conversation_id=convo.id, author=author, body=body))
+        db.session.commit()
+        flash("Comment posted.", "success")
+    return redirect(url_for("shared", token=token) + "#comments")
 
 
 # --------------------------------------------------------------------------- #

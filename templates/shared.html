@@ -19,6 +19,26 @@
     {% endfor %}
   </div>
 
+  <section id="comments" class="comments">
+    <h3>💬 Comments {% if comments %}({{ comments|length }}){% endif %}</h3>
+    <form method="POST" action="{{ url_for('add_comment', token=convo.share_token) }}" class="comment-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="text" name="author" placeholder="Your name (optional)" maxlength="80">
+      <textarea name="body" rows="2" placeholder="Add a comment…" maxlength="1000" required></textarea>
+      <button type="submit" class="btn-solid">Post comment</button>
+    </form>
+    <div class="comment-list">
+      {% for cm in comments %}
+      <div class="comment">
+        <div class="comment-top"><b>{{ cm.author }}</b><span class="hist-when">{{ cm.created_at.strftime('%d %b %Y, %H:%M') }}</span></div>
+        <p>{{ cm.body }}</p>
+      </div>
+      {% else %}
+      <p class="muted">No comments yet — be the first.</p>
+      {% endfor %}
+    </div>
+  </section>
+
   <div class="shared-cta">
     <p>Like this? Nova can chat, summarize documents, analyze data, and more.</p>
     <a href="{{ url_for('index') }}" class="btn-ghost">Explore Nova</a>
