@@ -21,6 +21,8 @@
               <span class="hist-when">{{ c.updated_at.strftime('%d %b %Y, %H:%M') }}</span>
             </a>
             <div class="hist-actions">
+              <a class="mini-link" href="{{ url_for('export_conversation', cid=c.id, fmt='md') }}" title="Export Markdown">MD</a>
+              <a class="mini-link" href="{{ url_for('export_conversation', cid=c.id, fmt='pdf') }}" title="Export PDF">PDF</a>
               <form method="POST" action="{{ url_for('share_conversation', cid=c.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="mini-share {{ 'on' if c.is_public }}" title="Share">{{ '🔗 Sharing' if c.is_public else '🔗 Share' }}</button>

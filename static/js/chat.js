@@ -60,9 +60,11 @@
     input.value = ''; input.style.height = 'auto'; sendBtn.disabled = true;
     const typing = add('assistant', '● ● ●'); typing.classList.add('typing');
     try {
+      const personaEl = document.getElementById('persona');
       const res = await fetch('/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, conversation_id: conversationId }),
+        body: JSON.stringify({ messages: history, conversation_id: conversationId,
+                               persona: personaEl ? personaEl.value : 'default' }),
       });
       const d = await res.json();
       typing.remove();

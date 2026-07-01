@@ -59,6 +59,14 @@ except ImportError:
 import base64
 import io
 try:
+    import markdown as md_lib
+except ImportError:
+    md_lib = None
+try:
+    from xhtml2pdf import pisa
+except ImportError:
+    pisa = None
+try:
     import pandas as pd
     import matplotlib
     matplotlib.use("Agg")            # headless server rendering
@@ -109,6 +117,26 @@ SYSTEM_PROMPT = (
     "fenced code blocks with a language tag. If you're unsure, say so."
 )
 FREE_MAX_CONVERSATIONS = 5   # Pro removes this cap
+
+# Expert personas — one-click system prompts for the chat.
+PERSONAS = {
+    "default": {"name": "Nova (general)", "system": SYSTEM_PROMPT},
+    "resume": {"name": "Resume reviewer",
+               "system": "You are an expert tech recruiter. Review resumes and answers "
+                         "with specific, honest, actionable feedback. Use bullet points."},
+    "study": {"name": "Study coach",
+              "system": "You are a patient study coach. Explain clearly, check understanding, "
+                        "and offer examples, analogies and practice questions."},
+    "analyst": {"name": "Data analyst",
+                "system": "You are a senior data analyst. Give precise, structured answers with "
+                          "tables and formulas where useful, and note assumptions."},
+    "coder": {"name": "Code helper",
+              "system": "You are a senior software engineer. Give correct, idiomatic code in "
+                        "fenced blocks with a language tag, then a short explanation."},
+    "writer": {"name": "Writing assistant",
+               "system": "You are a sharp writing assistant. Improve clarity and tone; offer "
+                         "a polished version plus a note on what you changed."},
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -178,6 +206,14 @@ class Note(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     title = db.Column(db.String(160), nullable=False)
     body = db.Column(db.Text, default="")
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+
+class Document(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    text = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=utcnow)
 
 
@@ -273,6 +309,8 @@ FEATURES = [
      "desc": "Find the latest remote jobs by keyword, category & location.", "endpoint": "jobs", "gated": True, "pro": False},
     {"icon": "🎓", "title": "Scholarship updates",
      "desc": "Browse current scholarship opportunities.", "endpoint": "scholarships", "gated": True, "pro": False},
+    {"icon": "📎", "title": "Chat with your document",
+     "desc": "Upload a PDF/Word/CSV and ask questions about it.", "endpoint": "docchat", "gated": True, "pro": False},
 ]
 
 # Pro-only tools. `endpoint` = live; None = coming soon.
@@ -334,7 +372,7 @@ PLANS = {
 # --------------------------------------------------------------------------- #
 # Gemini
 # --------------------------------------------------------------------------- #
-def gemini_reply(messages):
+def gemini_reply(messages, system=None):
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         return None, "AI chat isn't configured yet — a GEMINI_API_KEY is needed."
@@ -350,7 +388,7 @@ def gemini_reply(messages):
     if not contents:
         return None, "Say something and I'll reply."
     body = json.dumps({
-        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "systemInstruction": {"parts": [{"text": system or SYSTEM_PROMPT}]},
         "contents": contents,
         "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1200},
     }).encode("utf-8")
@@ -570,8 +608,9 @@ def chat_page():
         if not convo or convo.user_id != user.id:
             abort(404)
         messages = [{"role": m.role, "text": m.content} for m in convo.messages]
+    personas = [(k, v["name"]) for k, v in PERSONAS.items()]
     return render_template("chat.html", conversation_id=convo.id if convo else None,
-                           preload=messages)
+                           preload=messages, personas=personas)
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -582,7 +621,8 @@ def api_chat():
     messages = payload.get("messages")
     if not isinstance(messages, list) or not messages:
         return jsonify(reply="No message received.", error=True), 400
-    reply, err = gemini_reply(messages[-20:])
+    persona = PERSONAS.get(payload.get("persona", "default"), PERSONAS["default"])
+    reply, err = gemini_reply(messages[-20:], system=persona["system"])
     if err:
         return jsonify(reply=err, error=True)
 
@@ -985,6 +1025,141 @@ def transcript():
     return render_template("productivity.html", tasks=tasks, notes=notes,
                            transcript_result=(None if err else reply),
                            transcript_error=err)
+
+
+# --------------------------------------------------------------------------- #
+# Chat with your document / dataset (RAG-lite)
+# --------------------------------------------------------------------------- #
+DOC_SYSTEM = ("You answer questions about the user's uploaded document using ONLY "
+              "the provided context. If the answer isn't in the context, say you "
+              "don't know based on the document. Be concise; use Markdown.")
+
+
+def _chunk_text(text, size=1200, overlap=150):
+    text = re.sub(r"\s+", " ", text or "").strip()
+    chunks, i = [], 0
+    while i < len(text):
+        chunks.append(text[i:i + size])
+        i += size - overlap
+    return chunks or [""]
+
+
+def _retrieve(chunks, question, k=6):
+    qwords = {w for w in re.findall(r"[a-z0-9']+", question.lower()) if w not in STOPWORDS}
+    scored = []
+    for ch in chunks:
+        cw = re.findall(r"[a-z0-9']+", ch.lower())
+        scored.append((sum(1 for w in cw if w in qwords), ch))
+    scored.sort(key=lambda x: -x[0])
+    top = [c for s, c in scored[:k] if s > 0]
+    return top or chunks[:k]
+
+
+@app.route("/docchat", methods=["GET", "POST"])
+@login_required
+@limiter.limit("30 per hour")
+def docchat():
+    user = current_user()
+    if request.method == "POST":
+        upload = request.files.get("document")
+        if not upload or not upload.filename:
+            flash("Choose a document or dataset to upload.", "error")
+            return redirect(url_for("docchat"))
+        name = upload.filename
+        if name.lower().endswith((".csv", ".xlsx", ".xls")) and ANALYSIS_OK:
+            try:
+                df, derr = _read_dataframe(upload)
+                if derr:
+                    flash(derr, "error"); return redirect(url_for("docchat"))
+                text = ("Dataset %s with %d rows and %d columns.\nColumns: %s\n\nPreview:\n%s"
+                        % (name, df.shape[0], df.shape[1], ", ".join(map(str, df.columns)),
+                           df.head(30).to_csv(index=False)))
+            except Exception as exc:  # noqa: BLE001
+                flash("Couldn't read that file: %s" % exc, "error")
+                return redirect(url_for("docchat"))
+        else:
+            text, err = extract_file_text(upload)
+            if err:
+                flash(err, "error"); return redirect(url_for("docchat"))
+        if not (text or "").strip():
+            flash("Couldn't extract any text from that file.", "error")
+            return redirect(url_for("docchat"))
+        doc = Document(user_id=user.id, name=name[:200], text=text[:200000])
+        db.session.add(doc)
+        db.session.commit()
+        return redirect(url_for("docchat", d=doc.id))
+
+    docs = Document.query.filter_by(user_id=user.id).order_by(Document.id.desc()).all()
+    active = None
+    did = request.args.get("d", type=int)
+    if did:
+        active = db.session.get(Document, did)
+        if not active or active.user_id != user.id:
+            abort(404)
+    return render_template("docchat.html", docs=docs, active=active)
+
+
+@app.route("/api/docchat", methods=["POST"])
+@csrf.exempt
+@limiter.limit("20 per minute")
+def api_docchat():
+    user = current_user()
+    if user is None:
+        return jsonify(reply="Please log in.", error=True), 401
+    payload = request.get_json(silent=True) or {}
+    doc = db.session.get(Document, payload.get("doc_id") or 0)
+    if not doc or doc.user_id != user.id:
+        return jsonify(reply="Document not found.", error=True), 404
+    question = str(payload.get("question", "")).strip()
+    if not question:
+        return jsonify(reply="Ask a question about the document.", error=True), 400
+    context = "\n---\n".join(_retrieve(_chunk_text(doc.text), question))
+    prompt = "Context from \"%s\":\n%s\n\nQuestion: %s" % (doc.name, context[:16000], question)
+    reply, err = gemini_reply([{"role": "user", "text": prompt}], system=DOC_SYSTEM)
+    return jsonify(reply=err or reply, error=bool(err))
+
+
+# --------------------------------------------------------------------------- #
+# Export (Markdown / PDF)
+# --------------------------------------------------------------------------- #
+def _conversation_markdown(convo):
+    lines = ["# %s\n" % convo.title]
+    for m in convo.messages:
+        who = "**You:**" if m.role == "user" else "**Nova:**"
+        lines.append("%s\n\n%s\n" % (who, m.content))
+    return "\n".join(lines)
+
+
+@app.route("/conversation/<int:cid>/export")
+@login_required
+def export_conversation(cid):
+    convo = db.session.get(Conversation, cid)
+    if not convo or convo.user_id != current_user().id:
+        abort(404)
+    fmt = request.args.get("fmt", "md")
+    md_text = _conversation_markdown(convo)
+    safe = re.sub(r"[^a-zA-Z0-9]+", "-", convo.title)[:40].strip("-") or "chat"
+
+    if fmt == "pdf":
+        if md_lib is None or pisa is None:
+            flash("PDF export isn't available on the server.", "error")
+            return redirect(url_for("history"))
+        html = ("<html><head><meta charset='utf-8'><style>"
+                "body{font-family:Helvetica,Arial,sans-serif;font-size:11pt;color:#222}"
+                "h1{color:#4f46e5} pre{background:#f3f4fb;padding:8px;border-radius:6px}"
+                "code{background:#eef0fe;padding:1px 4px}</style></head><body>"
+                + md_lib.markdown(md_text, extensions=["fenced_code", "tables"])
+                + "</body></html>")
+        out = io.BytesIO()
+        pisa.CreatePDF(html, dest=out)
+        out.seek(0)
+        from flask import send_file
+        return send_file(out, mimetype="application/pdf", as_attachment=True,
+                         download_name="%s.pdf" % safe)
+
+    from flask import Response
+    return Response(md_text, mimetype="text/markdown",
+                    headers={"Content-Disposition": "attachment; filename=%s.md" % safe})
 
 
 @app.route("/health")

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Chat with your document — Nova{% endblock %}
+
+{% block body %}
+<main class="wrap tool">
+  <div class="tool-head"><a href="{{ url_for('index') }}" class="back">← Menu</a><h2>Chat with your document</h2></div>
+
+  <form method="POST" action="{{ url_for('docchat') }}" enctype="multipart/form-data" class="tool-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="dropzone">
+      <span class="dz-text">📎 Drag &amp; drop a <b>PDF, Word, .txt or CSV</b> — or click to choose</span>
+      <input type="file" name="document" accept=".pdf,.docx,.txt,.md,.csv,.xlsx" required>
+      <span class="dz-file"></span>
+    </label>
+    <button type="submit" class="btn-solid">Upload &amp; chat →</button>
+  </form>
+
+  {% if docs %}
+  <div class="doc-picker">
+    <span class="muted">Your documents:</span>
+    {% for d in docs %}
+      <a class="doc-chip {{ 'active' if active and d.id == active.id }}" href="{{ url_for('docchat', d=d.id) }}">📄 {{ d.name }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if active %}
+  <section class="doc-chat" data-doc="{{ active.id }}">
+    <h3 class="an-file">Ask about: {{ active.name }}</h3>
+    <div id="messages" class="messages">
+      <div class="msg bot">Ask me anything about <b>{{ active.name }}</b> — I'll answer from its contents.</div>
+    </div>
+    <form id="doc-form" class="chat-input">
+      <textarea id="doc-text" placeholder="e.g. What are the key findings? Summarize section 2…" rows="1"></textarea>
+      <button type="submit" id="doc-send" aria-label="Send">↑</button>
+    </form>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}
+
+{% block scripts %}
+{% include "_richlibs.html" %}
+<script src="{{ url_for('static', filename='js/docchat.js') }}"></script>
+{% endblock %}
