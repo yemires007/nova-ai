@@ -1,43 +1,71 @@
-# Nova — AI assistant hub
+# Nova — AI Assistant Hub
 
-A Flask app with a **menu launcher** and an **AI chat** powered by Google
-Gemini (free tier). Built to grow: summarize text/documents, job search, and
-scholarship updates are stubbed on the menu and slot in the same way.
+A full-stack AI web app built around one idea: a **doing** assistant for *your*
+content. Chat, ask questions about your documents, analyze datasets, study,
+and automate — powered by **Google Gemini**.
 
-The Gemini API key stays **server-side** (`GEMINI_API_KEY`) — the browser talks
-to `/api/chat`, which proxies to Gemini, so the key is never exposed.
+**🔗 Live demo:** https://nova-ai-xrhy.onrender.com
 
-## Get a free Gemini key
-1. Go to **https://aistudio.google.com/app/apikey** (sign in with Google — no card).
-2. **Create API key** → copy it.
+---
+
+## Features
+
+**Open to everyone**
+- **Chat with AI** — Gemini-powered chat with rich Markdown answers: syntax-highlighted code, tables, math (KaTeX) and diagrams/flowcharts (Mermaid), plus one-click **expert personas** (resume reviewer, study coach, data analyst, coder, writer).
+- **Summarize** — paste text or upload **Word / PDF / .txt** and get the gist.
+- **Chat with your document (RAG)** — upload a PDF/Word/CSV and ask questions answered *from its contents*.
+- **Job search** — live remote jobs (Remotive) by keyword, category, location & company.
+- **Scholarship updates** — curated opportunities.
+
+**Pro**
+- **Data analysis** — upload a CSV/Excel → clean (dedupe, fill/drop missing), profile, **visualize** (histograms, bar charts, correlation heatmap) and get an **AI interpretation**.
+- **Study Mode** — turn notes into flashcards, quizzes, key points or plain-English explanations.
+- **Smart Productivity** — tasks, notes, and meeting-transcript → action items.
+- **Custom Workflows** — chain AI steps (summarize → translate → improve …) and save the result to Notes.
+
+**Platform**
+- Accounts, **Free/Pro subscriptions** (Paystack), **password reset** (email via Resend).
+- **Shareable public chats** with comments. **Export** any chat to Markdown/PDF.
+- Dark/light mode, drag-and-drop uploads, animated UI.
+
+## Tech stack
+Flask · SQLAlchemy (SQLite locally / **PostgreSQL** in prod) · **Google Gemini API** ·
+pandas · matplotlib · pypdf · python-docx · Flask-WTF (CSRF) · Flask-Limiter ·
+Werkzeug auth · Jinja · vanilla JS (marked, DOMPurify, highlight.js, KaTeX, Mermaid) ·
+gunicorn · deployed on **Render**.
 
 ## Run locally
 ```bash
 python -m venv .venv
-.venv\Scripts\activate               # Windows
+.venv\Scripts\activate            # Windows  (source .venv/bin/activate on macOS/Linux)
 pip install -r requirements.txt
-set GEMINI_API_KEY=your-key-here      # Windows  (export GEMINI_API_KEY=... on macOS/Linux)
-python app.py
+# create a .env next to app.py with at least:
+#   GEMINI_API_KEY=your-google-ai-studio-key
+python app.py                     # http://127.0.0.1:5004
 ```
-Open **http://127.0.0.1:5004**. Without a key the app still runs — the chat
-just replies that it isn't configured. Check `/health` to see if the key loaded.
+Get a free Gemini key at https://aistudio.google.com/app/apikey.
+
+## Environment variables
+| Variable | Purpose |
+|---|---|
+| `GEMINI_API_KEY` | Google Gemini key (required for chat) |
+| `SECRET_KEY` | Flask session secret |
+| `DATABASE_URL` | Postgres in prod; defaults to local SQLite |
+| `GEMINI_MODEL` | optional (default `gemini-2.5-flash`) |
+| `PAYSTACK_SECRET_KEY` | optional — real payments; demo upgrade if blank |
+| `RESEND_API_KEY`, `MAIL_FROM` | optional — password-reset email; on-screen link if blank |
 
 ## Deploy (Render)
-Push to GitHub, then **New + → Blueprint** on Render. It reads `render.yaml`
-and prompts you for `GEMINI_API_KEY`. Free tier, HTTPS to Gemini works fine.
+Push to GitHub, then **New + → Blueprint**. `render.yaml` provisions a free
+Postgres, wires `DATABASE_URL`, generates `SECRET_KEY`, and prompts for the
+optional keys. Pinned to Python 3.11. The app auto-migrates new columns on
+startup, so redeploys are safe.
 
-## Files
-```
-aiassistant/
-├── app.py                 # routes + Gemini proxy
-├── templates/             # base, index (menu), chat
-├── static/css/style.css
-├── static/js/chat.js
-├── requirements.txt
-├── render.yaml, Procfile
-└── README.md
-```
+## Security
+Content-Security-Policy + security headers, CSRF protection, per-IP rate
+limiting, Werkzeug-hashed passwords, and Secure/HttpOnly/SameSite cookies.
 
-## Config
-- `GEMINI_API_KEY` — your key (required for chat).
-- `GEMINI_MODEL` — defaults to `gemini-1.5-flash`; set to another Gemini model if you prefer.
+---
+
+_A portfolio project by **Adeyemi Oluwaseyi Alao**. Demo software — not medical,
+financial or professional advice._
